@@ -137,6 +137,13 @@ export interface PlanRevisionMeta {
    *  heading exists with no content). Undefined means parsing wasn't run
    *  (e.g. plan from before this feature shipped). */
   sections?: PlanSections;
+  /** Set when the user clicks "Proceed" — the revision is locked from further
+   *  comments / step mutations / re-proceed until the user rewinds to this
+   *  revision's checkpoint. */
+  proceeded?: boolean;
+  /** Permission mode the user was in just before clicking "Proceed". Restored
+   *  on rewind so the user lands back where they started. */
+  prePermissionMode?: PermissionMode;
 }
 
 /** Required sections in plan-mode.md, in the order the prompt mandates. */

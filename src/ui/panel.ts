@@ -707,6 +707,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   ) {
     const trimmed = body.trim();
     if (!trimmed) return;
+    if (this.isRevisionProceeded(revisionId)) {
+      this.postLockedError();
+      return;
+    }
     this.session.emitPlanComment({
       commentId: makeNonce().slice(0, 8),
       revisionId,
@@ -725,6 +729,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   private handlePlanEditComment(commentId: string, body: string) {
     const trimmed = body.trim();
     if (!trimmed) return;
+    if (this.isCommentRevisionProceeded(commentId)) {
+      this.postLockedError();
+      return;
+    }
     const ev = this.findCommentEvent(commentId);
     if (!ev) return;
     const meta = ev.meta as Record<string, unknown>;
@@ -742,6 +750,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    * time.
    */
   private handlePlanDeleteComment(commentId: string) {
+    if (this.isCommentRevisionProceeded(commentId)) {
+      this.postLockedError();
+      return;
+    }
     const ev = this.findCommentEvent(commentId);
     if (!ev) return;
     const meta = ev.meta as Record<string, unknown>;
@@ -766,6 +778,31 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  /**
+   * True when the plan revision has been "proceeded" by the user — the
+   * revision is locked from further comments / step mutations / re-Proceed
+   * until the user rewinds to its checkpoint, which clears the flag.
+   */
+  private isRevisionProceeded(revisionId: string): boolean {
+    const ev = this.findRevisionEvent(revisionId);
+    if (!ev) return false;
+    return (ev.meta as { proceeded?: boolean } | undefined)?.proceeded === true;
+  }
+
+  private isCommentRevisionProceeded(commentId: string): boolean {
+    const ev = this.findCommentEvent(commentId);
+    if (!ev) return false;
+    const revId = (ev.meta as { revisionId?: string } | undefined)?.revisionId;
+    return revId ? this.isRevisionProceeded(revId) : false;
+  }
+
+  private postLockedError(): void {
+    this.post({
+      type: "error",
+      message: "Plan is locked. Rewind to this revision's checkpoint to edit."
+    });
+  }
+
   /** Append a reply: a new plan_comment whose `parentCommentId` points at `parent`. */
   private handlePlanReplyComment(
     revisionId: string,
@@ -774,6 +811,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   ) {
     const trimmed = body.trim();
     if (!trimmed) return;
+    if (this.isRevisionProceeded(revisionId)) {
+      this.postLockedError();
+      return;
+    }
     const parent = this.findCommentEvent(parentCommentId);
     const parentMeta = parent?.meta as
       | { taskId?: string; quote?: string }
@@ -792,6 +833,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   /** Toggle a comment's manual resolved state. */
   private handlePlanResolveComment(commentId: string, resolve: boolean) {
+    if (this.isCommentRevisionProceeded(commentId)) {
+      this.postLockedError();
+      return;
+    }
     const ev = this.findCommentEvent(commentId);
     if (!ev) return;
     const meta = ev.meta as Record<string, unknown>;
@@ -864,6 +909,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    * agent can start writing without the user having to manually flip mode.
    */
   private async handlePlanProceed(revisionId: string): Promise<void> {
+    if (this.isRevisionProceeded(revisionId)) {
+      this.postLockedError();
+      return;
+    }
+
     const cfg = vscode.workspace.getConfiguration("iridescent");
     const currentMode = cfg.get<PermissionMode>("permissionMode", "default");
 
@@ -873,21 +923,18 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         modal: true,
         detail:
           currentMode === "plan"
-            ? "Plan mode blocks edits. Approving switches to default mode (each edit still asks for approval) so the agent can carry out the plan."
+            ? "Plan mode blocks edits. Approving switches into Agent mode so the agent can carry out the plan autonomously."
             : "The agent will continue with file edits and any necessary commands."
       },
-      "Allow & continue",
-      "Allow auto (no prompts)"
+      "Allow & continue"
     );
 
     if (!choice) return; // user cancelled / closed modal
 
-    const wantAuto = choice === "Allow auto (no prompts)";
-    const targetMode: PermissionMode = wantAuto
-      ? "auto"
-      : currentMode === "plan"
-      ? "default"
-      : currentMode;
+    // Out of plan, go straight into Agent mode (auto). Anywhere else, leave
+    // the user's chosen mode alone.
+    const targetMode: PermissionMode =
+      currentMode === "plan" ? "auto" : currentMode;
 
     if (targetMode !== currentMode) {
       await cfg.update(
@@ -898,17 +945,52 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       // Mirror the change back to the webview so the mode pill updates
       // before the next turn begins.
       await this.broadcastAuthState();
+      // Drop the prior CLI resume id. Without this, the next claude-cli
+      // invocation passes --resume <plan-mode-session> and the resumed
+      // session's stored permission posture (plan = no edits) sticks even
+      // though we passed a new --permission-mode flag, so writes keep
+      // getting denied with "It seems write permissions need to be
+      // granted." A fresh session honors the new mode cleanly. We hand
+      // the plan file path back to the agent in the continuation prompt
+      // below so the lost conversation context is recovered.
+      this.resumeId = undefined;
     }
 
-    // Continue the same conversation. The model sees this as the next
-    // user turn but the UX flow (popup → continuation) makes it feel like
-    // a single click rather than two separate user actions.
-    void this.handlePrompt(
-      "Plan approved. Proceed with the implementation now. Carry out each step in order, stopping only if you hit a blocker that requires user input."
-    );
+    // Lock the revision: no more comments / step mutations / re-Proceed
+    // until the user rewinds to this revision's checkpoint. Capture the
+    // pre-Proceed mode so rewind can restore it.
+    const ev = this.findRevisionEvent(revisionId);
+    const planFilePath =
+      ev && ((ev.meta as { planFilePath?: string } | undefined)?.planFilePath ?? undefined);
+    if (ev) {
+      const meta = ev.meta as Record<string, unknown>;
+      meta.proceeded = true;
+      meta.prePermissionMode = currentMode;
+      this.post({ type: "timeline", event: ev });
+      this.scheduleSave();
+    }
+
+    // Continue the conversation. If we cleared resumeId above, the agent
+    // is in a fresh session with no planning context — so we hand it the
+    // plan file path to re-read. The "permission mode has changed" line
+    // is load-bearing: without it the model occasionally remembers being
+    // told (in the prior plan-mode prompt) to refuse edits and gets stuck
+    // even though the gate is open.
+    const continuation = [
+      "Plan approved. The permission mode has been switched out of plan mode — you now have permission to make file edits and run the commands the plan requires.",
+      planFilePath
+        ? `Re-read the plan at \`${planFilePath}\` and carry out each step in order.`
+        : "Carry out each step of the plan in order.",
+      "Stop only if you hit a blocker that requires user input."
+    ].join("\n\n");
+    void this.handlePrompt(continuation);
   }
 
   private async handlePlanAcceptStep(revisionId: string, taskId: string) {
+    if (this.isRevisionProceeded(revisionId)) {
+      this.postLockedError();
+      return;
+    }
     const result = this.mutateTaskStatus(revisionId, taskId, "accepted");
     if (!result) return;
     const taskMeta = result.task as { content?: string };
@@ -928,6 +1010,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   ) {
     const trimmed = instruction.trim();
     if (!trimmed) return;
+    if (this.isRevisionProceeded(revisionId)) {
+      this.postLockedError();
+      return;
+    }
     const ev = this.findRevisionEvent(revisionId);
     if (!ev) return;
     const meta = ev.meta as { tasks?: Array<{ id: string; content?: string; status: string }> };
@@ -943,6 +1029,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private handlePlanSkipStep(revisionId: string, taskId: string) {
+    if (this.isRevisionProceeded(revisionId)) {
+      this.postLockedError();
+      return;
+    }
     this.mutateTaskStatus(revisionId, taskId, "skipped");
   }
 
@@ -969,6 +1059,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    * a fresh plan_revision with parentRevisionId pointing at the old one.
    */
   private async handlePlanResubmit(revisionId: string) {
+    if (this.isRevisionProceeded(revisionId)) {
+      this.postLockedError();
+      return;
+    }
     const comments = this.session.timeline.filter(
       (e) =>
         e.kind === "plan_comment" &&
@@ -1230,6 +1324,36 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     await this.checkpoints.restore(turnId);
     const surviving = this.session.truncateAt(turnId);
     this.resumeId = undefined;
+
+    // If the user is rewinding to a proceeded plan revision, unlock it so
+    // they can comment / modify steps / re-Proceed, and restore the
+    // permission mode that was active just before they pressed Proceed.
+    const target = surviving.find((e) => e.id === turnId);
+    if (target && target.kind === "plan_revision") {
+      const meta = target.meta as {
+        proceeded?: boolean;
+        prePermissionMode?: PermissionMode;
+      } | undefined;
+      if (meta?.proceeded) {
+        const prevMode = meta.prePermissionMode;
+        delete meta.proceeded;
+        delete meta.prePermissionMode;
+        if (prevMode) {
+          const cfg = vscode.workspace.getConfiguration("iridescent");
+          const currentMode = cfg.get<PermissionMode>("permissionMode", "default");
+          if (currentMode !== prevMode) {
+            await cfg.update(
+              "permissionMode",
+              prevMode,
+              vscode.ConfigurationTarget.Global
+            );
+            await this.broadcastAuthState();
+          }
+        }
+        this.scheduleSave();
+      }
+    }
+
     this.post({ type: "rewind", events: surviving });
   }
 

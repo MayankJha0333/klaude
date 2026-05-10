@@ -57,7 +57,11 @@ export function PlanFullView({ view, previous, isLatest, ordinal, onCollapse }: 
   const rootRef = useRef<HTMLDivElement>(null);
 
   const summary = useMemo(() => extractPlanSummary(view.meta.body), [view.meta.body]);
-  const locked = !isLatest;
+  const proceeded = !!view.meta.proceeded;
+  // Treat a proceeded plan as locked for all editing surfaces — comments,
+  // step controls, the Review dropdown, etc. The user can unlock it by
+  // rewinding to this revision's checkpoint.
+  const locked = !isLatest || proceeded;
   const pending = unresolvedComments(view).length;
   const tasks = view.meta.tasks;
   const completed = tasks.filter((t) => t.status === "completed").length;
@@ -241,6 +245,28 @@ export function PlanFullView({ view, previous, isLatest, ordinal, onCollapse }: 
         </div>
       </header>
 
+      {proceeded && (
+        <div
+          className="plan-inline-banner"
+          role="status"
+          style={{
+            padding: "8px 12px",
+            margin: "0 0 8px",
+            borderRadius: 6,
+            background: "var(--vscode-inputValidation-infoBackground, rgba(0, 122, 204, 0.08))",
+            border: "1px solid var(--vscode-inputValidation-infoBorder, rgba(0, 122, 204, 0.4))",
+            color: "var(--vscode-foreground)",
+            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 6
+          }}
+        >
+          <Icon name="check" size={11} />
+          <span>Plan in progress — rewind to this revision to edit.</span>
+        </div>
+      )}
+
       {tasks.length > 0 && (
         <div
           className="plan-inline-progress"
@@ -325,7 +351,7 @@ export function PlanFullView({ view, previous, isLatest, ordinal, onCollapse }: 
         )}
 
         <section className="plan-inline-footer">
-          {isLatest && pending > 0 && (
+          {isLatest && !proceeded && pending > 0 && (
             <button
               type="button"
               className="plan-btn plan-btn-primary plan-btn-block"
@@ -337,7 +363,7 @@ export function PlanFullView({ view, previous, isLatest, ordinal, onCollapse }: 
               Update plan with feedback ({pending})
             </button>
           )}
-          {isLatest && pending === 0 && (
+          {isLatest && !proceeded && pending === 0 && (
             <button
               type="button"
               className="plan-btn plan-btn-success plan-btn-block"

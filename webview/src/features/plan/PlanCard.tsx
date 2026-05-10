@@ -38,6 +38,7 @@ export function PlanCard({ view, isLatest, ordinal }: Props) {
   const summary = useMemo(() => extractPlanSummary(view.meta.body), [view.meta.body]);
   const pending = unresolvedComments(view).length;
   const branched = !!view.meta.parentRevisionId;
+  const proceeded = !!view.meta.proceeded;
   const taskCount = view.meta.tasks.length;
   const completed = view.meta.tasks.filter((t) => t.status === "completed").length;
   const sectionStatus = useMemo(
@@ -75,6 +76,14 @@ export function PlanCard({ view, isLatest, ordinal }: Props) {
         {branched && (
           <Chip tone="info" title="Branched after a rewind">
             branched
+          </Chip>
+        )}
+        {proceeded && (
+          <Chip
+            tone="info"
+            title="Plan locked. Rewind to this revision's checkpoint to edit."
+          >
+            proceeded
           </Chip>
         )}
         {!isLatest && <Chip tone="default">superseded</Chip>}
@@ -130,7 +139,12 @@ export function PlanCard({ view, isLatest, ordinal }: Props) {
           type="button"
           className="plan-btn plan-btn-success"
           onClick={proceed}
-          disabled={!isLatest}
+          disabled={!isLatest || proceeded}
+          title={
+            proceeded
+              ? "Plan locked. Rewind to this revision's checkpoint to edit."
+              : undefined
+          }
         >
           Proceed
         </button>

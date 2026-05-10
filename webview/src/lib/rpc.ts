@@ -69,6 +69,8 @@ export interface PlanRevisionMeta {
   bodyChanged: boolean;
   planFilePath?: string;
   sections?: PlanSections;
+  proceeded?: boolean;
+  prePermissionMode?: "default" | "plan" | "auto";
 }
 
 export interface PlanSections {
