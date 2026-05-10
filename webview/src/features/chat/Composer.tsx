@@ -43,6 +43,10 @@ export interface ComposerProps {
   /** When set, splice this code block at the caret then call onInserted. */
   pendingInsert: CodeInsert | null;
   onInserted: () => void;
+  /** Compact in-message edit mode: hides the toolbar, swaps in a Cancel/Send footer. */
+  inline?: boolean;
+  /** Inline mode only — called when the user discards the edit. */
+  onDiscard?: () => void;
 }
 
 interface MentionState {
@@ -64,7 +68,9 @@ export function Composer({
   skills,
   focusKey,
   pendingInsert,
-  onInserted
+  onInserted,
+  inline = false,
+  onDiscard
 }: ComposerProps) {
   const editorRef = useRef<RichEditorHandle | null>(null);
   const [focused, setFocused] = useState(false);
@@ -77,6 +83,20 @@ export function Composer({
   useEffect(() => {
     if (focusKey > 0) editorRef.current?.focus();
   }, [focusKey]);
+
+  // Inline edit mode: focus on mount and let Escape discard.
+  useEffect(() => {
+    if (!inline) return;
+    editorRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onDiscard?.();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inline, onDiscard]);
 
   // Detect a mention query by inspecting the current selection. The popover
   // tracks the trailing `@<query>` chunk just before the caret in plain text.
@@ -181,7 +201,9 @@ export function Composer({
   const mode = findMode(permissionMode);
 
   return (
-    <div className={`cmp${focused ? " focused" : ""}${busy ? " busy" : ""}`}>
+    <div
+      className={`cmp${focused ? " focused" : ""}${busy ? " busy" : ""}${inline ? " cmp-inline" : ""}`}
+    >
       <MentionPopover
         open={mention.active}
         query={mention.query}
@@ -205,6 +227,29 @@ export function Composer({
         />
       </div>
 
+      {inline ? (
+        <div className="cmp-toolbar cmp-toolbar-inline">
+          <div className="cmp-spacer" />
+          <button
+            type="button"
+            className="modal-btn modal-btn-secondary cmp-inline-cancel"
+            onClick={() => onDiscard?.()}
+            title="Cancel edit (Esc)"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="cmp-send"
+            onClick={handleSubmit}
+            disabled={!canSend}
+            title="Send (↵)"
+            aria-label="Send"
+          >
+            <Icon name="send" size={13} />
+          </button>
+        </div>
+      ) : (
       <div className="cmp-toolbar">
         <Dropdown<PermissionMode>
           options={MODES.map((m) => ({
@@ -284,6 +329,7 @@ export function Composer({
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }

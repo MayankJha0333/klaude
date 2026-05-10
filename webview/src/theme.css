@@ -567,6 +567,7 @@ html, body, #root {
   background: linear-gradient(135deg, var(--s3), var(--s2));
   border: 1px solid var(--b2);
   color: var(--t2);
+  margin-right: 4px;
 }
 .msg-user .msg-body {
   padding: 8px 80px 8px 0;
@@ -1528,10 +1529,18 @@ html, body, #root {
    Rewind UI
    ═══════════════════════════════════════════════════════════════ */
 
-.msg-rewind {
+.msg-actions {
   position: absolute;
   top: 6px;
   right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.msg-user:hover .msg-actions { opacity: 1; }
+.msg-action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1544,14 +1553,84 @@ html, body, #root {
   font-size: 11px;
   font-weight: 600;
   font-family: inherit;
-  opacity: 0;
-  transition: all 140ms ease;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
 }
-.msg-user:hover .msg-rewind { opacity: 1; }
-.msg-rewind:hover {
+.msg-action:hover {
   color: var(--accent-glow);
   border-color: var(--accent-mid);
   background: var(--accent-soft);
+}
+
+/* Inline composer that replaces a user bubble while editing. */
+.msg-editing .msg-body {
+  padding: 0;
+}
+.msg-editing .cmp.cmp-inline {
+  margin: 0;
+}
+.cmp.cmp-inline {
+  border-color: var(--accent-mid);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.cmp-toolbar-inline {
+  padding: 6px 10px;
+  border-top: 1px solid var(--b1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cmp-inline-cancel {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+/* Click-anywhere-on-bubble to edit — show a subtle frame on hover so the
+   user knows the message is interactive. */
+.msg-body-editable {
+  cursor: text;
+  border-radius: 8px;
+  padding: 8px 80px 8px 10px !important;
+  margin-left: -10px;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+.msg-body-editable:hover {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-mid);
+}
+.msg-body-editable:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-glow);
+}
+
+/* ── Edit-confirmation modal (3-button) ────────────────────── */
+.edit-modal {
+  max-width: 460px;
+}
+.edit-modal-actions {
+  align-items: center;
+}
+.modal-btn-link {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--t2);
+  padding: 6px 10px;
+}
+.modal-btn-link:hover {
+  color: var(--t1);
+  background: var(--s2);
+}
+.modal-kbd {
+  margin-left: 6px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: inherit;
+  opacity: 0.7;
+  font-weight: 500;
+}
+.modal-btn-primary .modal-kbd {
+  color: rgba(255, 255, 255, 0.85);
+  opacity: 1;
 }
 /* Modal — used for rewind confirmation. Centered overlay over the chat panel. */
 .modal-backdrop {

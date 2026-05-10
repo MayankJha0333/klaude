@@ -6,7 +6,7 @@
 // they sent. Everything else passes through the markdown renderer.
 // ─────────────────────────────────────────────────────────────
 
-import { Fragment, ReactNode, useMemo, useState } from "react";
+import { Fragment, MouseEvent, ReactNode, useMemo, useState } from "react";
 import { Icon } from "../../design/icons";
 import { renderMarkdown } from "./markdown";
 
@@ -16,6 +16,7 @@ interface UserMessageProps {
   canRewind?: boolean;
   messagesAfter?: number;
   onRewindRequest?: (turnId: string, messagesAfter: number) => void;
+  onEditRequest?: (turnId: string) => void;
 }
 
 type Part =
@@ -52,14 +53,31 @@ export function UserMessage({
   text,
   canRewind,
   messagesAfter = 0,
-  onRewindRequest
+  onRewindRequest,
+  onEditRequest
 }: UserMessageProps) {
   const parts = useMemo(() => parseBody(text), [text]);
+
+  // Click anywhere on the bubble enters edit mode — but ignore clicks that
+  // landed on an interactive child (badge expand button, the Rewind button,
+  // a link, etc.) so those keep their own behavior.
+  const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (!onEditRequest) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("button, a")) return;
+    onEditRequest(id);
+  };
 
   return (
     <div className="msg msg-user">
       <div className="msg-avatar">Y</div>
-      <div className="msg-body md">
+      <div
+        className={`msg-body md${onEditRequest ? " msg-body-editable" : ""}`}
+        onClick={handleBubbleClick}
+        role={onEditRequest ? "button" : undefined}
+        tabIndex={onEditRequest ? 0 : undefined}
+        title={onEditRequest ? "Click to edit and re-run from here" : undefined}
+      >
         {parts.map((p, i) =>
           p.kind === "text" ? (
             <Fragment key={i}>{renderTextPart(p.text, i)}</Fragment>
@@ -68,15 +86,20 @@ export function UserMessage({
           )
         )}
         {canRewind && (
-          <button
-            type="button"
-            className="msg-rewind"
-            onClick={() => onRewindRequest?.(id, messagesAfter)}
-            title="Rewind conversation to here"
-          >
-            <Icon name="history" size={11} />
-            Rewind
-          </button>
+          <div className="msg-actions">
+            <button
+              type="button"
+              className="msg-action msg-rewind"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRewindRequest?.(id, messagesAfter);
+              }}
+              title="Rewind conversation to here"
+            >
+              <Icon name="history" size={11} />
+              Rewind
+            </button>
+          </div>
         )}
       </div>
     </div>

@@ -226,6 +226,7 @@ export type Outbound =
   | { type: "setPermissionMode"; mode: PermissionMode }
   | { type: "authReset" }
   | { type: "rewindTo"; turnId: string }
+  | { type: "editAt"; turnId: string; text: string; revertFiles: boolean }
   | { type: "authSubmitKey"; key: string }
   | { type: "authSubscription" }
   | { type: "openExternal"; url: string }

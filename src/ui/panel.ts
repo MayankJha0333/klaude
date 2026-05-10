@@ -424,6 +424,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           await this.rewindTo(msg.turnId);
         }
         break;
+      case "editAt":
+        if (typeof msg.turnId === "string" && typeof msg.text === "string") {
+          await this.editAt(msg.turnId, msg.text, msg.revertFiles === true);
+        }
+        break;
       case "refreshEditorContext":
         this.broadcastEditorContext();
         break;
@@ -1355,6 +1360,19 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
 
     this.post({ type: "rewind", events: surviving });
+  }
+
+  private async editAt(turnId: string, text: string, revertFiles: boolean) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    this.orchestrator?.cancel();
+    if (revertFiles && this.checkpoints?.hasCheckpoint(turnId)) {
+      await this.checkpoints.restore(turnId);
+    }
+    const surviving = this.session.truncateAt(turnId);
+    this.resumeId = undefined;
+    this.post({ type: "rewind", events: surviving });
+    await this.handlePrompt(trimmed);
   }
 
   private async onAuthSubscription() {

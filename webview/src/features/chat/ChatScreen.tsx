@@ -20,6 +20,7 @@ import { ContextStrip } from "./ContextStrip";
 import { EmptyState } from "./EmptyState";
 import { ErrorBanner } from "./ErrorBanner";
 import { RewindModal } from "./RewindModal";
+import { EditConfirmModal } from "./EditConfirmModal";
 import { HistoryDrawer } from "./HistoryDrawer";
 import { UserMessage } from "./UserMessage";
 import { AssistantMessage } from "./AssistantMessage";
@@ -100,7 +101,21 @@ export function ChatScreen({
     turnId: string;
     messagesAfter: number;
   } | null>(null);
+  const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<{
+    turnId: string;
+    text: string;
+    messagesAfter: number;
+  } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // If the timeline replaces (rewind / new session / load) and the message
+  // being edited is gone, exit edit mode so we don't leave a dangling editor.
+  useEffect(() => {
+    if (editingTurnId && !events.some((e) => e.id === editingTurnId)) {
+      setEditingTurnId(null);
+    }
+  }, [events, editingTurnId]);
   /** Per-turn user override. If absent, collapsed state is derived from the
    *  turn shape: completed turns auto-collapse, the active streaming turn
    *  stays expanded. User clicks set an explicit override that wins. */
@@ -178,6 +193,26 @@ export function ChatScreen({
           const isLatestTurn =
             g.kind === "turn" &&
             !grouped.groups.slice(i + 1).some((x) => x.kind === "turn");
+          const isEditing = g.kind === "user" && g.id === editingTurnId;
+          if (isEditing && g.kind === "user") {
+            const messagesAfter = grouped.groups.length - i - 1;
+            return (
+              <InlineMessageEditor
+                key={g.id}
+                initialText={g.text}
+                busy={busy}
+                model={model}
+                permissionMode={permissionMode}
+                models={models}
+                skills={skills}
+                authMode={authMode}
+                onCancel={() => setEditingTurnId(null)}
+                onSubmit={(text) => {
+                  setPendingEdit({ turnId: g.id, text, messagesAfter });
+                }}
+              />
+            );
+          }
           return renderGroup(
             g,
             i,
@@ -185,6 +220,7 @@ export function ChatScreen({
             planContext,
             (turnId, messagesAfter) =>
               setPendingRewind({ turnId, messagesAfter }),
+            (turnId) => setEditingTurnId(turnId),
             isTurnCollapsed,
             toggleTurn,
             isLatestTurn
@@ -201,6 +237,33 @@ export function ChatScreen({
           onConfirm={() => {
             send({ type: "rewindTo", turnId: pendingRewind.turnId });
             setPendingRewind(null);
+          }}
+        />
+      )}
+
+      {pendingEdit && (
+        <EditConfirmModal
+          messagesAfter={pendingEdit.messagesAfter}
+          onCancel={() => setPendingEdit(null)}
+          onDontRevert={() => {
+            send({
+              type: "editAt",
+              turnId: pendingEdit.turnId,
+              text: pendingEdit.text,
+              revertFiles: false
+            });
+            setPendingEdit(null);
+            setEditingTurnId(null);
+          }}
+          onRevert={() => {
+            send({
+              type: "editAt",
+              turnId: pendingEdit.turnId,
+              text: pendingEdit.text,
+              revertFiles: true
+            });
+            setPendingEdit(null);
+            setEditingTurnId(null);
           }}
         />
       )}
@@ -501,6 +564,7 @@ function renderGroup(
   all: Group[],
   ctx: { views: Map<string, PlanRevisionView>; ordered: PlanRevisionView[] },
   onRewindRequest: (turnId: string, messagesAfter: number) => void,
+  onEditRequest: (turnId: string) => void,
   isTurnCollapsed: (turnId: string, hasWork: boolean, isLatest: boolean) => boolean,
   toggleTurn: (turnId: string, currentlyCollapsed: boolean) => void,
   isLatestTurn: boolean
@@ -515,6 +579,7 @@ function renderGroup(
         canRewind
         messagesAfter={messagesAfter}
         onRewindRequest={onRewindRequest}
+        onEditRequest={onEditRequest}
       />
     );
   }
@@ -586,5 +651,60 @@ function renderTurnBlock(
       isLatest={isLatest}
       ordinal={ordinal}
     />
+  );
+}
+
+// ── Inline message editor ───────────────────────────────────
+//
+// Replaces a user bubble in the timeline when the user clicks Edit.
+// Wraps Composer in inline mode; local state owns the draft so the bottom
+// composer's input is unaffected. RichEditor parses the original markdown
+// (including code-pill blocks) on mount, so pills + the @ menu work
+// identically to the main composer.
+function InlineMessageEditor({
+  initialText,
+  busy,
+  model,
+  permissionMode,
+  models,
+  skills,
+  authMode,
+  onCancel,
+  onSubmit
+}: {
+  initialText: string;
+  busy: boolean;
+  model: string;
+  permissionMode: PermissionMode;
+  models: ReadonlyArray<ModelInfo>;
+  skills: ReadonlyArray<SkillInfo>;
+  authMode: AuthMode | null;
+  onCancel: () => void;
+  onSubmit: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState(initialText);
+  return (
+    <div className="msg msg-user msg-editing">
+      <div className="msg-avatar">Y</div>
+      <div className="msg-body">
+        <Composer
+          value={draft}
+          onChange={setDraft}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+          busy={busy}
+          authMode={authMode}
+          model={model}
+          permissionMode={permissionMode}
+          models={models}
+          skills={skills}
+          focusKey={0}
+          pendingInsert={null}
+          onInserted={() => {}}
+          inline
+          onDiscard={onCancel}
+        />
+      </div>
+    </div>
   );
 }
