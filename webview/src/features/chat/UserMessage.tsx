@@ -4,9 +4,25 @@
 // inline code badge in the composer — so we re-collapse those
 // patterns back into the same compact pill the user saw before
 // they sent. Everything else passes through the markdown renderer.
+//
+// Copy behavior: badge pills hide the actual code behind a click-
+// to-expand. A naive browser copy of a selection that includes a
+// badge would grab only the visible button label (filename + chevron
+// glyphs), not the underlying code. We intercept the `copy` event
+// on the bubble and substitute each badge's full markdown body
+// (`**file:lines**\n```lang\ncode\n```\n`) for its DOM contents in
+// the clipboard payload — Cursor does the same thing. The visible
+// UI is unaffected; only what lands in the clipboard changes.
 // ─────────────────────────────────────────────────────────────
 
-import { Fragment, MouseEvent, ReactNode, useMemo, useState } from "react";
+import {
+  ClipboardEvent as ReactClipboardEvent,
+  Fragment,
+  MouseEvent,
+  ReactNode,
+  useMemo,
+  useState
+} from "react";
 import { motion } from "framer-motion";
 import { Icon } from "../../design/icons";
 import { renderMarkdown } from "./markdown";
@@ -58,12 +74,71 @@ export function UserMessage({
   onEditRequest
 }: UserMessageProps) {
   const parts = useMemo(() => parseBody(text), [text]);
+  const [copied, setCopied] = useState(false);
 
   const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (!onEditRequest) return;
     const t = e.target as HTMLElement;
     if (t.closest("button, a")) return;
+    // Don't enter edit mode if the user was selecting text or dragged.
+    // A drag-to-select leaves a non-collapsed window selection at mouseup;
+    // tearing down the message into the composer at that point would
+    // destroy the selection before Cmd+C can fire. We let the click
+    // through only when the user has not selected anything (single click).
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) return;
     onEditRequest(id);
+  };
+
+  const handleCopyButton = async (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    // Build the clipboard payload from the parsed parts directly — this
+    // works regardless of whether the user has any text selected.
+    const out = parts
+      .map((p) =>
+        p.kind === "text"
+          ? p.text
+          : `**${p.label}**\n\`\`\`${p.lang}\n${p.code}\n\`\`\`\n`
+      )
+      .join("");
+    try {
+      await navigator.clipboard.writeText(out);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = out;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  };
+
+  /**
+   * Replace any badge pill in the selection with its original markdown
+   * (`**file:lines**\n```lang\ncode\n```\n`) before writing the clipboard
+   * payload. We `cloneContents()` the selection (which gives us a detached
+   * DocumentFragment we can mutate freely), swap every `[data-copy-text]`
+   * element for a text node carrying the original markdown, then read the
+   * fragment's textContent. If the selection contains no badge — there's
+   * nothing to fix, so we let the browser handle copy natively.
+   */
+  const handleCopy = (e: ReactClipboardEvent<HTMLDivElement>) => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    const fragment = range.cloneContents();
+    const badges = fragment.querySelectorAll("[data-copy-text]");
+    if (badges.length === 0) return;
+    badges.forEach((b) => {
+      const md = (b as HTMLElement).dataset.copyText ?? "";
+      b.replaceWith(document.createTextNode(md));
+    });
+    const out = fragment.textContent ?? "";
+    if (!out.trim()) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", out);
   };
 
   const editable = !!onEditRequest;
@@ -79,12 +154,13 @@ export function UserMessage({
         Y
       </div>
       <div
-        className={`md flex-1 min-w-0 leading-[1.65] break-words text-[13.5px] py-2 pr-20 pl-4 text-t1 relative space-y-1.5 [&>p]:my-0 [&>p+p]:mt-2${
+        className={`md flex-1 min-w-0 leading-[1.65] break-words text-[13.5px] py-2 pr-20 pl-4 text-t1 relative space-y-1.5 select-text [&>p]:my-0 [&>p+p]:mt-2${
           editable
             ? " cursor-text rounded-lg -ml-2.5 px-2.5 transition-[background,box-shadow] duration-[140ms] hover:bg-accent-soft hover:shadow-[inset_0_0_0_1px_var(--accent-mid)] focus-visible:outline-none focus-visible:bg-accent-soft focus-visible:shadow-[inset_0_0_0_1px_var(--accent-glow)]"
             : ""
         }`}
         onClick={handleBubbleClick}
+        onCopy={handleCopy}
         role={editable ? "button" : undefined}
         tabIndex={editable ? 0 : undefined}
         title={editable ? "Click to edit and re-run from here" : undefined}
@@ -96,11 +172,21 @@ export function UserMessage({
             <MsgBadge key={i} label={p.label} lang={p.lang} code={p.code} />
           )
         )}
-        {canRewind && (
-          <div className="absolute top-1.5 right-0 inline-flex items-center gap-1 opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100">
+        <div className="absolute top-1.5 right-0 inline-flex items-center gap-1 opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100 focus-within:opacity-100">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 bg-transparent border border-transparent text-t3 px-2 py-[3px] rounded-md cursor-pointer text-[11px] font-semibold font-[inherit] transition-colors duration-[140ms] hover:text-t1 hover:border-b2 hover:bg-s3"
+            onClick={handleCopyButton}
+            title="Copy message (including tagged code)"
+            aria-label="Copy message"
+          >
+            <Icon name={copied ? "check" : "copy"} size={11} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+          {canRewind && (
             <button
               type="button"
-              className="inline-flex items-center gap-1 bg-transparent border border-transparent text-t3 px-2.5 py-[3px] rounded-md cursor-pointer text-[11px] font-semibold font-[inherit] transition-colors duration-[140ms] hover:text-accent-glow hover:border-accent-mid hover:bg-accent-soft"
+              className="inline-flex items-center gap-1 bg-transparent border border-transparent text-t3 px-2 py-[3px] rounded-md cursor-pointer text-[11px] font-semibold font-[inherit] transition-colors duration-[140ms] hover:text-accent-glow hover:border-accent-mid hover:bg-accent-soft"
               onClick={(e) => {
                 e.stopPropagation();
                 onRewindRequest?.(id, messagesAfter);
@@ -110,8 +196,8 @@ export function UserMessage({
               <Icon name="history" size={11} />
               Rewind
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -133,8 +219,15 @@ function MsgBadge({
   code: string;
 }) {
   const [open, setOpen] = useState(false);
+  // The original markdown the user typed/dragged. `onCopy` on the bubble
+  // reads this attribute and substitutes it for the visible button text
+  // so a copy of "the pill" yields the actual code, not just the filename.
+  const copyText = `**${label}**\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
   return (
-    <span className={`inline-flex flex-col align-middle my-1${open ? " w-full" : ""}`}>
+    <span
+      className={`inline-flex flex-col align-middle my-1${open ? " w-full" : ""}`}
+      data-copy-text={copyText}
+    >
       <button
         type="button"
         className={`re-badge inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md bg-s2 border border-b2 text-t2 text-[11.5px] font-mono cursor-pointer align-middle transition-colors duration-[120ms] hover:bg-s3 hover:text-t1 hover:border-b3${

@@ -47,50 +47,51 @@
 }
 
 :root {
-  /* Surfaces — 4 elevations, warm charcoal */
-  --s0: #0a0a0e;
-  --s1: #111116;
-  --s2: #19191f;
-  --s3: #222229;
+  /* Surfaces — Cursor-style neutral dark greys (no warmth/cool tint).
+     4 elevations, each a hair lighter than the last. */
+  --s0: #0c0c0d;
+  --s1: #131315;
+  --s2: #1a1a1d;
+  --s3: #232328;
 
-  /* Borders — opacity-based */
-  --b1: rgba(255, 255, 255, 0.06);
-  --b2: rgba(255, 255, 255, 0.09);
-  --b3: rgba(255, 255, 255, 0.14);
+  /* Borders — opacity-based, slightly softer than before */
+  --b1: rgba(255, 255, 255, 0.055);
+  --b2: rgba(255, 255, 255, 0.085);
+  --b3: rgba(255, 255, 255, 0.13);
 
-  /* Text */
-  --t1: #f4f4f8;
-  --t2: #c8c8d4;
-  --t3: #7c7c90;
-  --t4: #4e4e62;
+  /* Text — cooler neutrals than the previous slightly-purple greys */
+  --t1: #ececef;
+  --t2: #c2c2c8;
+  --t3: #7a7a82;
+  --t4: #4a4a52;
 
-  /* Accent — indigo */
+  /* Accent — indigo retained for brand identity, used sparingly */
   --accent: #6366f1;
   --accent-deep: #4338ca;
   --accent-glow: #a5b4fc;
-  --accent-soft: rgba(99, 102, 241, 0.13);
-  --accent-mid: rgba(99, 102, 241, 0.22);
-  --accent-shadow: rgba(99, 102, 241, 0.4);
+  --accent-soft: rgba(99, 102, 241, 0.11);
+  --accent-mid: rgba(99, 102, 241, 0.2);
+  --accent-shadow: rgba(99, 102, 241, 0.35);
 
   /* Semantic */
-  --ok: #34d399;
-  --ok-soft: rgba(52, 211, 153, 0.14);
+  --ok: #4ade80;
+  --ok-soft: rgba(74, 222, 128, 0.12);
   --warn: #fbbf24;
-  --warn-soft: rgba(251, 191, 36, 0.14);
+  --warn-soft: rgba(251, 191, 36, 0.13);
   --err: #f87171;
   --err-soft: rgba(248, 113, 113, 0.12);
   --info: #60a5fa;
   --info-soft: rgba(96, 165, 250, 0.12);
 
-  /* Diff */
-  --add-bg: rgba(52, 211, 153, 0.1);
-  --add-line: #34d399;
-  --del-bg: rgba(248, 113, 113, 0.1);
+  /* Diff — Cursor-style: subtle green/red tints, brighter line colors */
+  --add-bg: rgba(74, 222, 128, 0.08);
+  --add-line: #4ade80;
+  --del-bg: rgba(248, 113, 113, 0.08);
   --del-line: #f87171;
 
-  /* Glass */
-  --glass: rgba(17, 17, 22, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  /* Glass — slightly less blur, more solid */
+  --glass: rgba(19, 19, 21, 0.9);
+  --glass-border: rgba(255, 255, 255, 0.07);
 
   --radius: 10px;
   --radius-sm: 8px;
@@ -1301,6 +1302,44 @@ html, body, #root {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 240px;
+}
+
+/* ─── Inline @file mention pill (lighter than code badge) ─── */
+.re-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 5px;
+  margin: 0 1px;
+  border-radius: 5px;
+  background: var(--s3);
+  border: 1px solid var(--b2);
+  color: var(--t2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  vertical-align: baseline;
+  cursor: default;
+  user-select: none;
+  animation: attachIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.re-mention:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-mid);
+  color: var(--t1);
+}
+.re-mention-at {
+  color: var(--accent);
+  font-weight: 800;
+  margin-right: 1px;
+}
+.re-mention-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 
 /* ─── Same badge inside the user message bubble ─── */

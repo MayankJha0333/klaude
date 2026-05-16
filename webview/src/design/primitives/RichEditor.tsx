@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import {
+  ClipboardEvent,
   KeyboardEvent,
   forwardRef,
   useEffect,
@@ -51,6 +52,7 @@ export interface RichEditorProps {
 }
 
 const BADGE_CLASS = "re-badge";
+const MENTION_CLASS = "re-mention";
 
 export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
   function RichEditor(
@@ -114,6 +116,79 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       onChange(text);
     };
 
+    /**
+     * Copy/cut from the contenteditable. We only intercept when the selection
+     * contains a badge or mention pill — otherwise we let the browser's
+     * native copy/cut run untouched, preserving all the usual hotkey
+     * behavior. For a pure text selection there's nothing special to
+     * serialize: native copy already gives the right characters.
+     *
+     * When a badge IS in the selection, native copy would only grab the
+     * visible label (filename + glyph) and drop the underlying source
+     * code / file path. We clone the range, run it through the same
+     * `serialize()` walker the editor uses on submit, and stash that
+     * markdown on the clipboard instead.
+     */
+    const serializeSelectionIfRich = (): string | null => {
+      const editor = ref.current;
+      if (!editor) return null;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+      const range = sel.getRangeAt(0);
+      if (!editor.contains(range.commonAncestorContainer)) return null;
+      const wrapper = document.createElement("div");
+      wrapper.appendChild(range.cloneContents());
+      const hasRich =
+        wrapper.querySelector(`.${BADGE_CLASS}, .${MENTION_CLASS}`) !== null;
+      if (!hasRich) return null;
+      return serialize(wrapper);
+    };
+
+    const handleCopy = (e: ClipboardEvent<HTMLDivElement>) => {
+      const text = serializeSelectionIfRich();
+      if (text === null || !text) return; // plain text → native copy runs
+      e.preventDefault();
+      e.clipboardData.setData("text/plain", text);
+    };
+
+    const handleCut = (e: ClipboardEvent<HTMLDivElement>) => {
+      const text = serializeSelectionIfRich();
+      if (text === null || !text) return; // plain text → native cut runs
+      e.preventDefault();
+      e.clipboardData.setData("text/plain", text);
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) {
+        sel.getRangeAt(0).deleteContents();
+        if (ref.current) {
+          const out = serialize(ref.current);
+          setIsEmpty(out.trim().length === 0);
+          onChange(out);
+        }
+      }
+    };
+
+    /**
+     * Paste handler — rehydrate badge-markdown patterns into real badge
+     * spans so pasting a previously-copied prompt back into the composer
+     * shows the same pills it originally had. Plain text without badge
+     * markers falls back to a regular text insert (preserving newlines).
+     */
+    const handlePaste = (e: ClipboardEvent<HTMLDivElement>) => {
+      const editor = ref.current;
+      if (!editor) return;
+      const text = e.clipboardData.getData("text/plain");
+      if (!text) return;
+      // Only intercept when at least one badge pattern is present; otherwise
+      // let the browser handle paste normally (which respects user intent).
+      const probe = /\*\*([^*\n]+)\*\*\n```([^\n]*)\n([\s\S]*?)\n```/;
+      if (!probe.test(text)) return;
+      e.preventDefault();
+      insertParsedAtSelection(editor, text);
+      const out = serialize(editor);
+      setIsEmpty(out.trim().length === 0);
+      onChange(out);
+    };
+
     const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
       if (e.nativeEvent.isComposing) return;
 
@@ -150,6 +225,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
           spellCheck={false}
           onInput={handleInput}
           onKeyDown={handleKeyDown}
+          onCopy={handleCopy}
+          onCut={handleCut}
+          onPaste={handlePaste}
           role="textbox"
           aria-multiline="true"
           aria-label="Message Iridescent"
@@ -195,6 +273,41 @@ function makeCodeBadge(
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+/**
+ * Atomic file-mention pill used when the user picks from the @-menu or
+ * drops a file onto the composer. Like the code badge it's
+ * `contenteditable=false` so backspace removes it as a unit, but it's
+ * narrower (no expand) and serializes as `@<basename>` rather than a
+ * fenced code block — the agent already understands that token.
+ *
+ * `data-path` carries the workspace-relative path for paste/copy
+ * round-trips and for any future "click to open" affordance.
+ */
+export function makeMentionBadge(
+  fullPath: string,
+  basename?: string
+): HTMLSpanElement {
+  const name = basename || fullPath.split("/").pop() || fullPath;
+  const el = document.createElement("span");
+  el.className = MENTION_CLASS;
+  el.setAttribute("contenteditable", "false");
+  el.dataset.path = fullPath;
+  el.dataset.name = name;
+  el.title = fullPath;
+
+  const at = document.createElement("span");
+  at.className = "re-mention-at";
+  at.textContent = "@";
+  el.appendChild(at);
+
+  const label = document.createElement("span");
+  label.className = "re-mention-label";
+  label.textContent = name;
+  el.appendChild(label);
+
+  return el;
 }
 
 function insertCodeBlockAtSelection(container: HTMLElement, ins: CodeInsert) {
@@ -269,6 +382,15 @@ function serialize(container: HTMLElement): string {
       return;
     }
 
+    if (el.classList.contains(MENTION_CLASS)) {
+      const name = el.dataset.name ?? el.textContent?.replace(/^@/, "") ?? "";
+      // Serialize as plain `@basename ` so the rest of the pipeline sees
+      // the same token whether the user typed it or picked it. The full
+      // path (data-path) is preserved on the DOM for the next edit cycle.
+      if (name) out.push(`@${name} `);
+      return;
+    }
+
     if (el.tagName === "BR") {
       out.push("\n");
       return;
@@ -290,6 +412,97 @@ function serialize(container: HTMLElement): string {
     .join("")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+// ── Paste handling (markdown → rich DOM at caret) ──────────
+
+/**
+ * Splice a markdown blob into the editor at the current selection,
+ * reusing the same parsing logic as the initial mount render. Badge
+ * markers (`**label**\n```lang\ncode\n```\n`) become atomic
+ * `re-badge` spans; everything else flows in as text + <br/>.
+ *
+ * Builds the nodes into a detached DocumentFragment first so the
+ * editor only mutates once — keeps the caret stable.
+ */
+function insertParsedAtSelection(container: HTMLElement, text: string): void {
+  const sel = window.getSelection();
+  let range: Range;
+  if (sel && sel.rangeCount > 0 && container.contains(sel.anchorNode as Node | null)) {
+    range = sel.getRangeAt(0);
+    range.deleteContents();
+  } else {
+    range = document.createRange();
+    range.selectNodeContents(container);
+    range.collapse(false);
+  }
+
+  const fragment = buildFragmentFromMarkdown(text);
+  // We need a stable trailing node to land the caret on, otherwise the
+  // browser puts the caret at the very start of the next sibling — which
+  // for a trailing badge means "inside the badge", trapping it.
+  const trailingSpace = document.createTextNode(" ");
+  fragment.appendChild(trailingSpace);
+
+  range.insertNode(fragment);
+  range.setStartAfter(trailingSpace);
+  range.collapse(true);
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
+
+function buildFragmentFromMarkdown(text: string): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  const lines = text.split("\n");
+  let i = 0;
+  const textBuf: string[] = [];
+
+  const flushTextBuffer = () => {
+    if (textBuf.length === 0) return;
+    const parts = textBuf.join("\n").split("\n");
+    parts.forEach((p, idx) => {
+      if (idx > 0) frag.appendChild(document.createElement("br"));
+      if (p.length > 0) frag.appendChild(document.createTextNode(p));
+    });
+    textBuf.length = 0;
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // closing fence
+
+      // Pull the trailing **label** line off the buffer if it preceded the fence.
+      let label = "";
+      while (textBuf.length > 0 && textBuf[textBuf.length - 1].trim() === "") {
+        textBuf.pop();
+      }
+      if (textBuf.length > 0) {
+        const last = textBuf[textBuf.length - 1];
+        const m = last.match(/^\*\*([^*]+)\*\*\s*$/);
+        if (m) {
+          label = m[1];
+          textBuf.pop();
+        }
+      }
+
+      flushTextBuffer();
+      frag.appendChild(makeCodeBadge(label, lang, codeLines.join("\n")));
+      frag.appendChild(document.createTextNode(" "));
+      continue;
+    }
+    textBuf.push(line);
+    i++;
+  }
+  flushTextBuffer();
+  return frag;
 }
 
 // ── Initial render (markdown → rich DOM) ───────────────────

@@ -230,6 +230,9 @@ export type Outbound =
   | { type: "authSubmitKey"; key: string }
   | { type: "authSubscription" }
   | { type: "openExternal"; url: string }
+  | { type: "openFile"; path: string; startLine?: number; endLine?: number }
+  | { type: "revertFile"; path: string }
+  | { type: "refreshUsage" }
   | { type: "runTerminalCommand"; command: string }
   | { type: "requestModels" }
   | { type: "requestSkills" }
@@ -357,7 +360,62 @@ export type Inbound =
       skillName: string;
       reason: string;
       taskType: string;
+    }
+  | {
+      type: "tokenUsage";
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens?: number;
+      cacheCreatedTokens?: number;
+      costUsd?: number;
+      sessionId?: string;
+      /** Provider that reported the usage — webview shows it in the meter tooltip. */
+      source: "anthropic" | "claude-cli";
+      /** Authoritative limits from Anthropic's response headers, when available. */
+      rateLimit?: RateLimitInfo;
+    }
+  | { type: "revertResult"; path: string; ok: boolean; error?: string }
+  | {
+      type: "claudeCodeUsage";
+      /** Authoritative usage aggregated from ~/.claude/projects/<cwd>/*.jsonl */
+      session: SessionWindow;
+      today: UsageTotals;
+      week: UsageTotals;
+      weekSonnet: UsageTotals;
+      total: UsageTotals;
+      generatedAt: number;
+      available: boolean;
     };
+
+export interface UsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreatedTokens: number;
+  messages: number;
+}
+
+export interface SessionWindow {
+  usage: UsageTotals;
+  /** ms epoch when the 5-hour window began (first message of the burst). */
+  startedAt: number;
+  /** ms epoch when the window will reset (startedAt + 5h). */
+  resetsAt: number;
+}
+
+export interface RateLimitBucket {
+  limit?: number;
+  remaining?: number;
+  /** ms epoch when this bucket resets. */
+  resetsAt?: number;
+}
+
+export interface RateLimitInfo {
+  tokens: RateLimitBucket;
+  inputTokens: RateLimitBucket;
+  outputTokens: RateLimitBucket;
+  requests: RateLimitBucket;
+}
 
 export type ConventionsSource =
   | "claude-root"

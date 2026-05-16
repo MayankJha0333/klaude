@@ -55,6 +55,39 @@ export type TaskType =
   | "new-impl"
   | "generic";
 
+export interface TokenUsage {
+  /** Tokens read from prompt (incl. cached). */
+  inputTokens: number;
+  /** Tokens emitted by the assistant in this message. */
+  outputTokens: number;
+  /** Cached prompt tokens served from a previously-written cache (cheap). */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to a new cache entry (one-time cost). */
+  cacheCreatedTokens?: number;
+  /** Total cost in USD if the provider reports it. */
+  costUsd?: number;
+  /** Free-form session identifier the provider associates with this usage. */
+  sessionId?: string;
+  /**
+   * Authoritative quota info from Anthropic's `anthropic-ratelimit-*`
+   * response headers. Present on API-mode responses; absent for subscription
+   * mode (Claude CLI doesn't expose the underlying HTTP headers).
+   */
+  rateLimit?: {
+    tokens: RateLimitBucket;
+    inputTokens: RateLimitBucket;
+    outputTokens: RateLimitBucket;
+    requests: RateLimitBucket;
+  };
+}
+
+export interface RateLimitBucket {
+  limit?: number;
+  remaining?: number;
+  /** ms epoch when this bucket resets. */
+  resetsAt?: number;
+}
+
 export interface StreamDelta {
   type:
     | "text"
@@ -62,6 +95,7 @@ export interface StreamDelta {
     | "tool_use_input"
     | "tool_use_end"
     | "tool_result"
+    | "usage"
     | "done"
     | "error";
   text?: string;
@@ -71,6 +105,7 @@ export interface StreamDelta {
   toolUseId?: string;
   resultContent?: string;
   resultIsError?: boolean;
+  usage?: TokenUsage;
 }
 
 export interface TimelineEvent {

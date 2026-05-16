@@ -77,6 +77,93 @@ describe("CheckpointService", () => {
     expect(svc.hasCheckpoint("t2")).toBe(false);
   });
 
+  it("restoreFile rewrites the file from its most recent snapshot", async () => {
+    const svc = new CheckpointService(tmp, "sess-rf");
+    await fs.writeFile(path.join(tmp, "a.txt"), "before-write");
+    await svc.captureBefore("t1");
+    await fs.writeFile(path.join(tmp, "a.txt"), "after-write");
+    const result = await svc.restoreFile("a.txt");
+    expect(result).toEqual({ deleted: false });
+    const after = await fs.readFile(path.join(tmp, "a.txt"), "utf8");
+    expect(after).toBe("before-write");
+  });
+
+  it("restoreFile normalizes absolute paths inside the workspace", async () => {
+    const svc = new CheckpointService(tmp, "sess-rf-abs");
+    await fs.writeFile(path.join(tmp, "a.txt"), "before-write");
+    await svc.captureBefore("t1");
+    await fs.writeFile(path.join(tmp, "a.txt"), "after-write");
+    // Caller passes the agent's absolute path — service must still find it.
+    const abs = path.join(tmp, "a.txt");
+    const result = await svc.restoreFile(abs);
+    expect(result).toEqual({ deleted: false });
+    const after = await fs.readFile(path.join(tmp, "a.txt"), "utf8");
+    expect(after).toBe("before-write");
+  });
+
+  it("addFileToLatest captures git HEAD content for tracked files (pre-edit state)", async () => {
+    // This is the critical regression test: in Claude CLI mode the
+    // tool_call event arrives AFTER the CLI executed the tool, so reading
+    // the file from disk gives us the *post-edit* content. addFileToLatest
+    // must instead pull from git HEAD so revert restores the original.
+    const svc = new CheckpointService(tmp, "sess-head");
+    await svc.captureBefore("turn-1");
+    // Simulate the race: the agent has already mutated a tracked file
+    // on disk by the time we're asked to snapshot it.
+    await fs.writeFile(path.join(tmp, "a.txt"), "agent-overwrote-it");
+    await svc.addFileToLatest("a.txt");
+    // Now restore — should get the HEAD content "original-a", NOT
+    // "agent-overwrote-it".
+    const result = await svc.restoreFile("a.txt");
+    expect(result).toEqual({ deleted: false });
+    const after = await fs.readFile(path.join(tmp, "a.txt"), "utf8");
+    expect(after).toBe("original-a");
+  });
+
+  it("addFileToLatest treats untracked existing files as 'did-not-exist'", async () => {
+    // For files git doesn't know about, we can't recover their pre-edit
+    // state (no HEAD entry, and disk has post-edit content). Storing
+    // existed:false means revert will delete the file, which is the
+    // safest outcome for "the agent created this file".
+    const svc = new CheckpointService(tmp, "sess-untracked");
+    await svc.captureBefore("turn-1");
+    await fs.writeFile(path.join(tmp, "agent-only.txt"), "agent-wrote-this");
+    await svc.addFileToLatest("agent-only.txt");
+    const result = await svc.restoreFile("agent-only.txt");
+    expect(result).toEqual({ deleted: true });
+    await expect(fs.access(path.join(tmp, "agent-only.txt"))).rejects.toThrow();
+  });
+
+  it("addFileToLatest stores workspace-relative paths even when given absolute", async () => {
+    const svc = new CheckpointService(tmp, "sess-add-abs");
+    await svc.captureBefore("t1");
+    // Agent emits an absolute path in its tool input.
+    await svc.addFileToLatest(path.join(tmp, "fresh.txt"));
+    await fs.writeFile(path.join(tmp, "fresh.txt"), "agent-created");
+
+    // Either form must hit the same snapshot.
+    expect(svc.hasSnapshotFor("fresh.txt")).toBe(true);
+    expect(svc.hasSnapshotFor(path.join(tmp, "fresh.txt"))).toBe(true);
+
+    const result = await svc.restoreFile(path.join(tmp, "fresh.txt"));
+    expect(result).toEqual({ deleted: true });
+    await expect(fs.access(path.join(tmp, "fresh.txt"))).rejects.toThrow();
+  });
+
+  it("restoreFile returns null when no snapshot exists", async () => {
+    const svc = new CheckpointService(tmp, "sess-miss");
+    await svc.captureBefore("t1");
+    const result = await svc.restoreFile("never-snapshotted.txt");
+    expect(result).toBeNull();
+  });
+
+  it("addFileToLatest ignores absolute paths outside the workspace", async () => {
+    const svc = new CheckpointService(tmp, "sess-outside");
+    await svc.captureBefore("t1");
+    await svc.addFileToLatest("/tmp/somewhere-else.txt");
+    expect(svc.hasSnapshotFor("/tmp/somewhere-else.txt")).toBe(false);
+  });
+
   it("gc keeps last 20 per session", async () => {
     const svc = new CheckpointService(tmp, "sess-4");
     for (let i = 0; i < 25; i++) {

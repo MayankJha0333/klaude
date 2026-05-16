@@ -4,13 +4,15 @@
 // design. The header carries identity + global session actions.
 // ─────────────────────────────────────────────────────────────
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Icon } from "../../design/icons";
 import { IconButton, Chip } from "../../design/primitives";
-import { send, AuthMode, ConventionsSource } from "../../lib/rpc";
+import { send, AuthMode, ConventionsSource, TimelineEvent } from "../../lib/rpc";
 import { findMode } from "./constants";
 import type { PermissionMode } from "../../lib/rpc";
 import { ConventionsStatusPill } from "./ConventionsStatusPill";
+import { TokenMeter } from "./TokenMeter";
 
 interface HeaderProps {
   authMode: AuthMode | null;
@@ -21,27 +23,49 @@ interface HeaderProps {
     path: string | null;
     relativePath: string | null;
   };
+  events: ReadonlyArray<TimelineEvent>;
+  streaming: string;
   onOpenHistory: () => void;
+  onOpenPalette: () => void;
 }
 
-export function Header({ authMode, permissionMode, busy, conventions, onOpenHistory }: HeaderProps) {
+export function Header({
+  authMode,
+  permissionMode,
+  busy,
+  conventions,
+  events,
+  streaming,
+  onOpenHistory,
+  onOpenPalette
+}: HeaderProps) {
   const mode = findMode(permissionMode);
   const authLabel = authMode === "subscription" ? "subscription" : "api key";
+  const [newChatTick, setNewChatTick] = useState(0);
+  const handleNewChat = () => {
+    send({ type: "newSession" });
+    setNewChatTick((t) => t + 1);
+  };
   return (
-    <header className="flex items-center justify-between gap-2 px-3 py-[9px] border-b border-b1 bg-s1 min-h-[44px] flex-shrink-0">
+    <header
+      className="flex items-center justify-between gap-2 px-3 py-[9px] border-b border-b1 bg-gradient-to-b from-s1 to-s1/85 min-h-[46px] flex-shrink-0 backdrop-blur-sm sticky top-0 z-10"
+      style={{ boxShadow: "0 1px 0 var(--b1), 0 8px 24px -16px rgba(0,0,0,0.5)" }}
+    >
       <div className="flex items-center gap-2 flex-wrap min-w-0">
-        <div
-          className="w-[22px] h-[22px] rounded-[7px] inline-flex items-center justify-center text-white flex-shrink-0"
+        <motion.div
+          className="w-[24px] h-[24px] rounded-[8px] inline-flex items-center justify-center text-white flex-shrink-0 relative"
           style={{
             background:
               "conic-gradient(from 180deg, var(--accent), var(--accent-glow), var(--accent))",
-            boxShadow: "0 1px 8px var(--accent-shadow)"
+            boxShadow: "0 1px 10px var(--accent-shadow), 0 0 0 1px rgba(255,255,255,0.06) inset"
           }}
           aria-hidden
+          whileHover={{ scale: 1.06, rotate: 12 }}
+          transition={{ type: "spring", stiffness: 360, damping: 18 }}
         >
-          <Icon name="sparkle" size={11} />
-        </div>
-        <span className="font-bold text-[13px] tracking-[-0.2px] text-t1 flex-shrink-0">
+          <Icon name="sparkle" size={12} />
+        </motion.div>
+        <span className="font-bold text-[13.5px] tracking-[-0.3px] text-t1 flex-shrink-0">
           Iridescent
         </span>
         <Chip tone={authMode === "subscription" ? "accent" : "info"} title={authLabel}>
@@ -69,14 +93,53 @@ export function Header({ authMode, permissionMode, busy, conventions, onOpenHist
         )}
       </div>
 
-      <div className="flex gap-0.5 flex-shrink-0">
-        <IconButton icon="history" title="Chat history" size={28} onClick={onOpenHistory} />
+      <div className="flex gap-0.5 flex-shrink-0 items-center">
+        <TokenMeter events={events} streaming={streaming} />
+        <div className="w-px h-4 bg-b1 mx-1" />
         <IconButton
-          icon="plus"
-          title="New chat"
+          icon="search"
+          title="Command palette (⌘K)"
           size={28}
-          onClick={() => send({ type: "newSession" })}
+          onClick={onOpenPalette}
         />
+        <IconButton icon="history" title="Chat history" size={28} onClick={onOpenHistory} />
+        <motion.button
+          key={`new-chat-${newChatTick}`}
+          type="button"
+          title="New chat"
+          aria-label="New chat"
+          className="w-7 h-7 rounded-md bg-transparent border-0 p-0 inline-flex items-center justify-center font-[inherit] cursor-pointer text-t3 hover:bg-s3 hover:text-t1 transition-colors relative"
+          onClick={handleNewChat}
+          whileTap={{ scale: 0.86 }}
+          whileHover={{ scale: 1.08 }}
+          transition={{ type: "spring", stiffness: 500, damping: 22 }}
+        >
+          <motion.span
+            initial={false}
+            animate={
+              newChatTick > 0
+                ? { rotate: 90, scale: [1, 1.2, 1] }
+                : { rotate: 0, scale: 1 }
+            }
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="inline-flex"
+          >
+            <Icon name="plus" size={14} />
+          </motion.span>
+          {newChatTick > 0 && (
+            <motion.span
+              key={`ripple-${newChatTick}`}
+              className="absolute inset-0 rounded-md pointer-events-none"
+              style={{
+                background:
+                  "radial-gradient(circle at center, var(--accent-glow), transparent 70%)"
+              }}
+              initial={{ opacity: 0.5, scale: 0.6 }}
+              animate={{ opacity: 0, scale: 1.6 }}
+              transition={{ duration: 0.55, ease: "easeOut" }}
+            />
+          )}
+        </motion.button>
         <IconButton
           icon="logout"
           title="Logout"

@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   send,
   TimelineEvent,
@@ -30,6 +30,12 @@ import { SkillSuggestion } from "./SkillSuggestion";
 import { ToolGroupCard, ToolGroupItem } from "./ToolGroupCard";
 import { TurnHeader } from "./TurnHeader";
 import { ThoughtBlock } from "./ThoughtBlock";
+import { EditedFilesCard } from "./EditedFilesCard";
+import { InlineEditPreview } from "./InlineEditPreview";
+import { extractFileEdits } from "./extract-file-edits";
+import { CommandPalette } from "./CommandPalette";
+import { KeyboardHints } from "./KeyboardHints";
+import { PinnedContext, PinnedFile } from "./PinnedContext";
 import { classifyTool, ToolBucket } from "./tool-buckets";
 import { renderMarkdown } from "./markdown";
 import { PlanCard, foldPlanState, looksLikePlanFile } from "../plan";
@@ -64,6 +70,10 @@ export interface ChatScreenProps {
   } | null;
   onDismissSkillSuggestion: () => void;
   onInserted: () => void;
+  pins: ReadonlyArray<PinnedFile>;
+  onPin: (p: PinnedFile) => void;
+  onUnpin: (path: string) => void;
+  onClearPins: () => void;
   onInput: (v: string) => void;
   onSubmit: (text: string) => void;
   onCancel: () => void;
@@ -90,6 +100,10 @@ export function ChatScreen({
   skillSuggestion,
   onDismissSkillSuggestion,
   onInserted,
+  pins,
+  onPin: _onPin,
+  onUnpin,
+  onClearPins,
   onInput,
   onSubmit,
   onCancel,
@@ -109,6 +123,20 @@ export function ChatScreen({
     messagesAfter: number;
   } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [hintsOpen, setHintsOpen] = useState(false);
+  // Session epoch — bumps when the timeline goes from non-empty → empty (i.e.
+  // user clicked "New chat"). Wrapping the log content in AnimatePresence with
+  // a key tied to this number gives a clean fade-out / fade-in on reset rather
+  // than the messages just popping away.
+  const [sessionEpoch, setSessionEpoch] = useState(0);
+  const prevEventCount = useRef(events.length);
+  useEffect(() => {
+    if (prevEventCount.current > 0 && events.length === 0) {
+      setSessionEpoch((e) => e + 1);
+    }
+    prevEventCount.current = events.length;
+  }, [events.length]);
 
   // If the timeline replaces (rewind / new session / load) and the message
   // being edited is gone, exit edit mode so we don't leave a dangling editor.
@@ -117,6 +145,30 @@ export function ChatScreen({
       setEditingTurnId(null);
     }
   }, [events, editingTurnId]);
+
+  // Global keyboard shortcuts — Cmd/Ctrl+K opens palette, "?" opens hints.
+  // We skip the "?" when the user is typing in a text field so it doesn't
+  // hijack normal questions.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const inField =
+        document.activeElement &&
+        ((document.activeElement as HTMLElement).tagName === "INPUT" ||
+          (document.activeElement as HTMLElement).tagName === "TEXTAREA" ||
+          (document.activeElement as HTMLElement).isContentEditable);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+        return;
+      }
+      if (!inField && e.key === "?" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setHintsOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   /** Per-turn user override. If absent, collapsed state is derived from the
    *  turn shape: completed turns auto-collapse, the active streaming turn
    *  stays expanded. User clicks set an explicit override that wins. */
@@ -149,6 +201,39 @@ export function ChatScreen({
     [grouped]
   );
 
+  // Continue-from-here: seed the composer with a follow-up prompt anchored to
+  // the excerpt of an assistant message. Onfocus the composer too so the user
+  // can immediately type their follow-up.
+  const handleContinueFromHere = (excerpt: string) => {
+    const trimmed = excerpt.trim();
+    if (!trimmed) return;
+    onInput(`> ${trimmed.replace(/\n/g, "\n> ")}\n\n`);
+    // composerFocusKey bump can't be done here (it's a prop), so we trigger a
+    // microtask focus via the DOM.
+    queueMicrotask(() => {
+      const el = document.querySelector<HTMLElement>(
+        "[contenteditable=\"true\"]"
+      );
+      el?.focus();
+    });
+  };
+
+  // Diff-line comment: append a structured note to the composer so the next
+  // prompt naturally carries the file/line context. Keeps everything else
+  // the user has typed intact — just slots the note in below.
+  const handleAddDiffNote = (note: import("./FileDiffModal").DiffLineNote) => {
+    const fileName = note.path.split("/").pop() ?? note.path;
+    const chunk = `On \`${fileName}:${note.lineNo}\` (\`${note.context.trim().slice(0, 80)}\`): ${note.text}`;
+    const prefix = input.trim() ? input.trimEnd() + "\n\n" : "";
+    onInput(prefix + chunk + "\n");
+    queueMicrotask(() => {
+      const el = document.querySelector<HTMLElement>(
+        "[contenteditable=\"true\"]"
+      );
+      el?.focus();
+    });
+  };
+
   useEffect(() => {
     if (userScrolled.current) return;
     const el = logRef.current;
@@ -171,7 +256,10 @@ export function ChatScreen({
         permissionMode={permissionMode}
         busy={busy}
         conventions={conventions}
+        events={events}
+        streaming={streaming}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
 
       {bannerVisible && (
@@ -191,9 +279,22 @@ export function ChatScreen({
       <div
         ref={logRef}
         onScroll={onScroll}
-        className="flex-1 overflow-y-auto px-4 pt-5 pb-4 flex flex-col gap-7 scroll-smooth [&>*]:flex-shrink-0"
+        className="flex-1 overflow-y-auto px-4 pt-4 pb-4 flex flex-col gap-5 scroll-smooth [&>*]:flex-shrink-0 relative"
       >
-        {grouped.groups.length === 0 && !streaming && <EmptyState />}
+        <AnimatePresence mode="wait" initial={false}>
+          {grouped.groups.length === 0 && !streaming && (
+            <motion.div
+              key={`empty-${sessionEpoch}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              className="m-auto flex w-full justify-center"
+            >
+              <EmptyState />
+            </motion.div>
+          )}
+        </AnimatePresence>
         {grouped.groups.map((g, i) => {
           const isLatestTurn =
             g.kind === "turn" &&
@@ -228,7 +329,9 @@ export function ChatScreen({
             (turnId) => setEditingTurnId(turnId),
             isTurnCollapsed,
             toggleTurn,
-            isLatestTurn
+            isLatestTurn,
+            handleContinueFromHere,
+            handleAddDiffNote
           );
         })}
         {streaming && <AssistantMessage text={streaming} streaming />}
@@ -286,28 +389,81 @@ export function ChatScreen({
         }}
       />
 
-      {userScrolled.current && (
-        <button
-          type="button"
-          className="absolute right-[18px] bottom-[130px] w-8 h-8 rounded-full bg-accent text-white border-0 cursor-pointer text-[14px] font-[inherit] z-[5] transition-transform duration-[140ms] hover:-translate-y-0.5"
-          style={{
-            boxShadow:
-              "0 4px 16px var(--accent-shadow), 0 8px 24px rgba(0,0,0,0.4)"
-          }}
-          aria-label="Scroll to bottom"
-          onClick={() => {
-            userScrolled.current = false;
-            const el = logRef.current;
-            if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-            force((n) => n + 1);
-          }}
-        >
-          ↓
-        </button>
-      )}
+      <AnimatePresence>
+        {paletteOpen && (
+          <CommandPalette
+            open={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            models={models}
+            skills={skills}
+            permissionMode={permissionMode}
+            onLoadSession={(id) => send({ type: "loadSession", id })}
+            onOpenKeyboardHints={() => setHintsOpen(true)}
+            onOpenHistory={() => setHistoryOpen(true)}
+          />
+        )}
+        {hintsOpen && (
+          <KeyboardHints key="kbd-hints" onClose={() => setHintsOpen(false)} />
+        )}
+      </AnimatePresence>
 
-      <div className="px-3 pb-3 pt-1 flex flex-col gap-2 bg-s0 border-t border-b1">
-        <ContextStrip context={editorContext} />
+      <AnimatePresence>
+        {userScrolled.current && (
+          <motion.button
+            key="scroll-bottom"
+            type="button"
+            className="absolute right-[18px] bottom-[140px] w-9 h-9 rounded-full bg-accent text-white border-0 cursor-pointer font-[inherit] z-[5] flex items-center justify-center"
+            style={{
+              boxShadow:
+                "0 4px 18px var(--accent-shadow), 0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.08) inset"
+            }}
+            aria-label="Scroll to bottom"
+            initial={{ opacity: 0, y: 8, scale: 0.85 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.9 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            whileHover={{ y: -2, scale: 1.05 }}
+            whileTap={{ scale: 0.94 }}
+            onClick={() => {
+              userScrolled.current = false;
+              const el = logRef.current;
+              if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+              force((n) => n + 1);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M10 4v12M4 10l6 6 6-6" />
+            </svg>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      <div
+        className="px-3 pb-3 pt-1 flex flex-col gap-2 bg-s0 border-t border-b1 relative"
+        style={{
+          boxShadow: "0 -8px 24px -16px rgba(0,0,0,0.55)"
+        }}
+      >
+        <PinnedContext
+          pins={pins}
+          onRemove={onUnpin}
+          onClearAll={onClearPins}
+        />
+        <ContextStrip
+          context={editorContext}
+          pinned={pins.some(
+            (p) => editorContext && p.path === editorContext.file
+          )}
+          onPin={() => {
+            if (!editorContext) return;
+            _onPin({
+              path: editorContext.file,
+              label:
+                editorContext.file.split("/").pop() ?? editorContext.file
+            });
+          }}
+          onUnpin={() => editorContext && onUnpin(editorContext.file)}
+        />
         <Composer
           value={input}
           onChange={onInput}
@@ -580,7 +736,9 @@ function renderGroup(
   onEditRequest: (turnId: string) => void,
   isTurnCollapsed: (turnId: string, hasWork: boolean, isLatest: boolean) => boolean,
   toggleTurn: (turnId: string, currentlyCollapsed: boolean) => void,
-  isLatestTurn: boolean
+  isLatestTurn: boolean,
+  onContinue: (text: string) => void,
+  onAddDiffNote: (note: import("./FileDiffModal").DiffLineNote) => void
 ) {
   if (g.kind === "user") {
     const messagesAfter = all.length - idx - 1;
@@ -601,8 +759,15 @@ function renderGroup(
   // text + plan cards) renders OUTSIDE the collapsible so it's never hidden.
   const hasWork = !!g.thought || g.blocks.length > 0;
   const collapsed = isTurnCollapsed(g.turnId, hasWork, isLatestTurn);
+  // Pull file-edit summary across the whole turn (work + response). The card
+  // is rendered after responseBlocks so it sits at the end of the turn, just
+  // before the next user message.
+  const allToolItems: ToolGroupItem[] = [];
+  for (const b of g.blocks) if (b.kind === "toolGroup") allToolItems.push(...b.items);
+  for (const b of g.responseBlocks) if (b.kind === "toolGroup") allToolItems.push(...b.items);
+  const fileEdits = extractFileEdits(allToolItems);
   return (
-    <div key={g.turnId} className="mt-2 mx-3.5 mb-3 pl-9">
+    <div key={g.turnId} className="mt-1 mx-1.5 mb-1 pl-9">
       {hasWork && (
         <>
           <TurnHeader
@@ -622,8 +787,16 @@ function renderGroup(
       )}
       {g.responseBlocks.length > 0 && (
         <div className="flex flex-col gap-2 mt-2">
-          {g.responseBlocks.map((b, i) => renderTurnBlock(b, i, ctx))}
+          {g.responseBlocks.map((b, i) => {
+            const isLastNarrative =
+              b.kind === "narrative" &&
+              !g.responseBlocks.slice(i + 1).some((x) => x.kind === "narrative");
+            return renderTurnBlock(b, i, ctx, isLastNarrative ? onContinue : undefined);
+          })}
         </div>
+      )}
+      {fileEdits.length > 0 && (
+        <EditedFilesCard edits={fileEdits} onAddDiffNote={onAddDiffNote} />
       )}
     </div>
   );
@@ -632,9 +805,20 @@ function renderGroup(
 function renderTurnBlock(
   b: TurnBlock,
   i: number,
-  ctx: { views: Map<string, PlanRevisionView>; ordered: PlanRevisionView[] }
+  ctx: { views: Map<string, PlanRevisionView>; ordered: PlanRevisionView[] },
+  onContinue?: (text: string) => void
 ) {
   if (b.kind === "narrative") {
+    if (onContinue) {
+      return (
+        <AssistantMessage
+          key={`n-${i}`}
+          text={b.text}
+          showAvatar={false}
+          onContinue={onContinue}
+        />
+      );
+    }
     return (
       <div
         key={`n-${i}`}
@@ -645,6 +829,25 @@ function renderTurnBlock(
     );
   }
   if (b.kind === "toolGroup") {
+    // Write/Edit tool groups render as Cursor-style inline diff previews —
+    // one mini-diff card per file, in conversation order, instead of the
+    // generic collapsible "Edited 3 files" bucket.
+    if (b.bucket === "edit") {
+      const inlineEdits = extractFileEdits(b.items);
+      if (inlineEdits.length > 0) {
+        return (
+          <div key={`ie-${i}-${b.items[0].id}`} className="flex flex-col gap-1.5">
+            {inlineEdits.map((entry) => (
+              <InlineEditPreview
+                key={entry.id}
+                entry={entry}
+                onOpenFull={() => undefined}
+              />
+            ))}
+          </div>
+        );
+      }
+    }
     return (
       <ToolGroupCard
         key={`tg-${i}-${b.items[0].id}`}

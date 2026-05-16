@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Icon } from "../../design/icons";
 import { ToolCard } from "./ToolCard";
 import { ToolBucket, bucketMeta, bucketSummary } from "./tool-buckets";
@@ -39,7 +40,12 @@ export function ToolGroupCard({ bucket, items }: ToolGroupCardProps) {
     : bucketSummary(bucket, items.length);
 
   return (
-    <div className={`tool-group tool-group-${status}`}>
+    <motion.div
+      className={`tool-group tool-group-${status}`}
+      initial={{ opacity: 0, y: 3 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
       <button
         type="button"
         className="tool-group-head"
@@ -54,25 +60,38 @@ export function ToolGroupCard({ bucket, items }: ToolGroupCardProps) {
           {status === "ok" && <span className="tool-group-ok">✓</span>}
           {status === "error" && <span className="tool-group-err">✕</span>}
         </span>
-        <span className="tool-group-chev">
-          <Icon name={open ? "chevronD" : "chevronR"} size={10} />
-        </span>
+        <motion.span
+          className="tool-group-chev"
+          animate={{ rotate: open ? 90 : 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+        >
+          <Icon name="chevronR" size={10} />
+        </motion.span>
       </button>
-      {open && (
-        <div className="tool-group-body">
-          {items.map((it) => (
-            <ToolCard
-              key={it.id}
-              name={it.name}
-              input={it.input}
-              result={it.result}
-              isError={it.isError}
-              pending={it.result === undefined && !it.isError}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            className="tool-group-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            style={{ overflow: "hidden" }}
+          >
+            {items.map((it) => (
+              <ToolCard
+                key={it.id}
+                name={it.name}
+                input={it.input}
+                result={it.result}
+                isError={it.isError}
+                pending={it.result === undefined && !it.isError}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 

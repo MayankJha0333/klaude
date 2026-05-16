@@ -216,6 +216,13 @@ function regexToCliPattern(p: string): string {
     .trim();
 }
 
+interface CliUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}
+
 export interface CliEvent {
   type: string;
   subtype?: string;
@@ -226,6 +233,7 @@ export interface CliEvent {
       | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
       | { type: "tool_result"; tool_use_id: string; content: unknown; is_error?: boolean }
     >;
+    usage?: CliUsage;
   };
   event?: {
     type: string;
@@ -239,9 +247,14 @@ export interface CliEvent {
       type: string;
       text?: string;
       partial_json?: string;
+      /** Some CLI versions attach final usage on the message_delta event. */
+      usage?: CliUsage;
     };
     index?: number;
   };
+  /** End-of-turn result event — has the canonical post-turn usage + cost. */
+  usage?: CliUsage;
+  total_cost_usd?: number;
   error?: string;
   result?: string;
 }
@@ -327,6 +340,11 @@ export function makeProcessor(setResume?: (id: string) => void): Processor {
         }
       }
       sawPartialText = false;
+      // Some CLI versions ship per-assistant-message usage. Forward it so the
+      // meter shows live counts as the turn streams (the final result event
+      // sends a corrected total later).
+      const u = ev.message.usage;
+      if (u) out.push(makeUsageDelta(u, ev.session_id));
       return out;
     }
 
@@ -356,6 +374,16 @@ export function makeProcessor(setResume?: (id: string) => void): Processor {
     }
 
     if (ev.type === "result") {
+      // The end-of-turn `result` event carries the canonical totals — emit a
+      // usage delta with cost if reported so the meter can switch from
+      // estimate to authoritative.
+      if (ev.usage) {
+        const u = makeUsageDelta(ev.usage, ev.session_id);
+        if (u.usage && typeof ev.total_cost_usd === "number") {
+          u.usage.costUsd = ev.total_cost_usd;
+        }
+        out.push(u);
+      }
       if (ev.subtype === "error" || ev.subtype === "error_max_turns") {
         out.push({
           type: "error",
@@ -382,6 +410,25 @@ export function mapEvent(
   setResume?: (id: string) => void
 ): StreamDelta[] {
   return makeProcessor(setResume)(ev);
+}
+
+function makeUsageDelta(u: CliUsage, sessionId?: string): StreamDelta {
+  return {
+    type: "usage",
+    usage: {
+      inputTokens: u.input_tokens ?? 0,
+      outputTokens: u.output_tokens ?? 0,
+      cacheReadTokens:
+        u.cache_read_input_tokens !== undefined
+          ? u.cache_read_input_tokens
+          : undefined,
+      cacheCreatedTokens:
+        u.cache_creation_input_tokens !== undefined
+          ? u.cache_creation_input_tokens
+          : undefined,
+      sessionId
+    }
+  };
 }
 
 function lastUserText(messages: Message[]): string {

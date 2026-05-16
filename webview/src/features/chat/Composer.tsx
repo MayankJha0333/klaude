@@ -11,6 +11,7 @@ import { Icon } from "../../design/icons";
 import {
   Dropdown,
   RichEditor,
+  makeMentionBadge,
   type CodeInsert,
   type RichEditorHandle
 } from "../../design/primitives";
@@ -186,6 +187,11 @@ export function Composer({
   };
 
   const handleMentionPick = useCallback((result: FileSearchResult) => {
+    // Replace the trailing `@<query>` token immediately before the caret
+    // with an atomic mention pill carrying the full path on data-path.
+    // Falls back to plain `@basename ` text when something about the
+    // current selection prevents the in-place splice (e.g. caret outside
+    // a text node).
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
     const range = sel.getRangeAt(0);
@@ -200,22 +206,27 @@ export function Composer({
     if (text[tokenStart] !== "@") return;
 
     const basename = result.name || result.path.split("/").pop() || result.path;
-    const replacement = `@${basename} `;
     const before = text.slice(0, tokenStart);
     const after = text.slice(offset);
-    const newText = before + replacement + after;
-    node.textContent = newText;
 
-    // Place caret right after the inserted reference.
-    const caretPos = (before + replacement).length;
+    // Split the original text node into a leading text node, the pill,
+    // and a trailing text node so the caret can land cleanly after.
+    const parent = node.parentNode;
+    if (!parent) return;
+    node.textContent = before;
+    const pill = makeMentionBadge(result.path, basename);
+    parent.insertBefore(pill, node.nextSibling);
+    const trailingSpace = document.createTextNode(" " + after);
+    parent.insertBefore(trailingSpace, pill.nextSibling);
+
+    // Caret right after the inserted space — ready for more typing.
     const r = document.createRange();
-    r.setStart(node, caretPos);
+    r.setStart(trailingSpace, 1);
     r.collapse(true);
     sel.removeAllRanges();
     sel.addRange(r);
 
     setMention(NO_MENTION);
-    // Notify parent so persisted value updates.
     onChange(editorRef.current?.serialize() ?? "");
   }, [onChange]);
 
@@ -236,24 +247,116 @@ export function Composer({
 
   const canSend = !busy && value.trim().length > 0;
   const mode = findMode(permissionMode);
+  const [dropping, setDropping] = useState(false);
 
   const wrapperCls = [
     "relative bg-s2 border rounded-xl overflow-visible transition-[border-color,box-shadow] duration-150",
     inline ? "mx-0 my-0 border-accent-mid shadow-[0_0_0_1px_var(--accent-soft)]" : "mx-3 mt-2 mb-3 border-b2",
     !inline && focused ? "border-accent shadow-[0_0_0_3px_var(--accent-soft)]" : "",
-    busy ? "opacity-90 [&_.dropdown]:opacity-100 [&_.mention-popover]:opacity-100" : ""
+    busy ? "opacity-90 [&_.dropdown]:opacity-100 [&_.mention-popover]:opacity-100" : "",
+    dropping ? "border-accent shadow-[0_0_0_3px_var(--accent-soft)] bg-accent-soft/40" : ""
   ]
     .filter(Boolean)
     .join(" ");
 
+  /**
+   * Drop handler for both images and file paths.
+   *
+   * 1. If the DataTransfer carries any image file → embed it as a markdown
+   *    image (`![name](data:…)`). Lets users drop a screenshot in.
+   *
+   * 2. Otherwise we look for file references in priority order:
+   *    a) `text/uri-list` (the standard MIME type when dragging files from
+   *       OS file managers like Finder / Explorer / VS Code's tree view).
+   *    b) `application/vnd.code.uri-list` (VS Code's own drag format).
+   *    c) `e.dataTransfer.files` — name only when the host strips paths.
+   *
+   *    Each resolved path becomes a `re-mention` pill. The same path
+   *    serializes to `@basename` so the agent picks it up normally.
+   */
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDropping(false);
+    const dt = e.dataTransfer;
+
+    // 1) Image embed
+    const image = Array.from(dt.files).find((f) =>
+      f.type.startsWith("image/")
+    );
+    if (image) {
+      const dataUrl = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result));
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(image);
+      });
+      insertTokenAtCursor(`![${image.name}](${dataUrl})\n\n`);
+      return;
+    }
+
+    // 2) Files-as-mentions
+    const paths = collectDroppedPaths(dt);
+    if (paths.length === 0) return;
+    editorRef.current?.focus();
+    for (const p of paths) {
+      const basename = p.split("/").pop() || p;
+      insertMentionAtCursor(p, basename);
+    }
+    onChange(editorRef.current?.serialize() ?? "");
+  };
+
+  /** Splice a mention pill at the current caret position. */
+  const insertMentionAtCursor = (fullPath: string, basename: string) => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const pill = makeMentionBadge(fullPath, basename);
+    range.insertNode(pill);
+    const space = document.createTextNode(" ");
+    pill.parentNode?.insertBefore(space, pill.nextSibling);
+    const r = document.createRange();
+    r.setStart(space, 1);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  };
+
   return (
-    <div ref={wrapperRef} className={wrapperCls}>
+    <div
+      ref={wrapperRef}
+      className={wrapperCls}
+      onDragOver={(e) => {
+        if (Array.from(e.dataTransfer.types).includes("Files")) {
+          e.preventDefault();
+          setDropping(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        // Only un-drop when leaving the wrapper itself (not a child).
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDropping(false);
+      }}
+      onDrop={handleDrop}
+    >
       <MentionPopover
         open={mention.active}
         query={mention.query}
         onPick={handleMentionPick}
         onClose={() => setMention(NO_MENTION)}
       />
+
+      {dropping && (
+        <div
+          className="absolute inset-0 z-30 rounded-xl border-2 border-dashed border-accent flex items-center justify-center pointer-events-none"
+          style={{ background: "rgba(99,102,241,0.08)" }}
+        >
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-s1 border border-accent-mid text-[12px] text-accent-glow font-semibold">
+            <Icon name="attach" size={13} />
+            Drop to attach as @mention
+          </div>
+        </div>
+      )}
 
       <div
         className="relative w-full"
@@ -356,6 +459,57 @@ export function Composer({
       )}
     </div>
   );
+}
+
+/**
+ * Pull file paths out of a drop's DataTransfer in priority order:
+ *   1. `text/uri-list` — standard, multi-line, `file://` URIs
+ *   2. `application/vnd.code.uri-list` — VS Code's internal drag format
+ *   3. `e.dataTransfer.files` — falls back to plain File names
+ *
+ * Returns a deduplicated, ordered list of file paths (workspace-relative
+ * or absolute, however the OS handed them to us).
+ */
+function collectDroppedPaths(dt: DataTransfer): string[] {
+  const out: string[] = [];
+  const push = (s: string) => {
+    const trimmed = s.trim();
+    if (trimmed && !out.includes(trimmed)) out.push(trimmed);
+  };
+
+  const decodeUri = (u: string): string => {
+    try {
+      const url = new URL(u);
+      if (url.protocol !== "file:") return u;
+      // `file:///Users/foo/bar` → `/Users/foo/bar`. decodeURIComponent
+      // handles spaces (`%20`) and other escapes.
+      return decodeURIComponent(url.pathname);
+    } catch {
+      return u;
+    }
+  };
+
+  const uriList =
+    dt.getData("text/uri-list") ||
+    dt.getData("application/vnd.code.uri-list");
+  if (uriList) {
+    for (const raw of uriList.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      push(decodeUri(line));
+    }
+  }
+
+  if (out.length === 0) {
+    for (const f of Array.from(dt.files)) {
+      // Webview File objects often only expose `name`. We still pass that
+      // along — the agent's file resolver can match by basename.
+      const p = (f as File & { path?: string }).path || f.name;
+      push(p);
+    }
+  }
+
+  return out;
 }
 
 const MODE_BTN =

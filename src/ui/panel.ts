@@ -34,6 +34,7 @@ import {
   InstallScope,
   InstallTarget
 } from "../services/marketplace.js";
+import { aggregateClaudeCodeUsage } from "../services/claude-code-usage.js";
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = "iridescent.chat";
@@ -172,8 +173,38 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     // session that the constructor created.
     void this.restoreLatestSession().then(() => {
       this.replayTimeline();
+      void this.broadcastClaudeCodeUsage();
     });
     this.wireEditorContext();
+    // Refresh aggregated Claude Code usage every 60s while the panel is
+    // open. Cheap on disk (a few JSONL files per workspace) and keeps the
+    // meter honest if the user runs `claude` from a terminal.
+    const timer = setInterval(() => {
+      void this.broadcastClaudeCodeUsage();
+    }, 60_000);
+    this.ctx.subscriptions.push({ dispose: () => clearInterval(timer) });
+  }
+
+  /** Aggregate authoritative usage from Claude Code's per-workspace JSONL
+   *  files and push it to the webview. No-op if no workspace is open. */
+  private async broadcastClaudeCodeUsage(): Promise<void> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) return;
+    try {
+      const agg = await aggregateClaudeCodeUsage(root);
+      this.post({
+        type: "claudeCodeUsage",
+        session: agg.session,
+        today: agg.today,
+        week: agg.week,
+        weekSonnet: agg.weekSonnet,
+        total: agg.total,
+        generatedAt: agg.generatedAt,
+        available: agg.available
+      });
+    } catch {
+      // best-effort; the chip falls back to its estimate
+    }
   }
 
   /**
@@ -393,6 +424,23 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "openExternal":
         if (typeof msg.url === "string") await vscode.env.openExternal(vscode.Uri.parse(msg.url));
+        break;
+      case "openFile":
+        if (typeof msg.path === "string") {
+          await this.handleOpenFile(
+            msg.path,
+            typeof msg.startLine === "number" ? msg.startLine : 0,
+            typeof msg.endLine === "number" ? msg.endLine : 0
+          );
+        }
+        break;
+      case "revertFile":
+        if (typeof msg.path === "string") {
+          await this.handleRevertFile(msg.path);
+        }
+        break;
+      case "refreshUsage":
+        await this.broadcastClaudeCodeUsage();
         break;
       case "runTerminalCommand":
         if (typeof msg.command === "string") {
@@ -855,6 +903,128 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    * Reveal a workspace-relative path at the given range and select that
    * range so the user sees the slice the plan step is talking about.
    */
+  /**
+   * Restore a single file from the most recent checkpoint that snapshotted
+   * it. Used by the per-file "Revert" affordance on the EditedFilesCard.
+   *
+   * `pathOrRel` may be absolute or workspace-relative; `CheckpointService`
+   * normalizes both forms internally so the lookup matches regardless of
+   * which form the agent's tool input used.
+   *
+   * Posts a `revertResult` back to the webview with one of three shapes:
+   *   - ok: true                          — file overwritten or removed
+   *   - ok: false, error: "<no snapshot>" — no checkpoint contains this file
+   *   - ok: false, error: <other>         — IO failure
+   */
+  private async handleRevertFile(pathOrRel: string): Promise<void> {
+    if (!this.checkpoints) {
+      this.post({
+        type: "revertResult",
+        path: pathOrRel,
+        ok: false,
+        error:
+          "Checkpoints aren't initialized yet — run at least one prompt first."
+      });
+      return;
+    }
+    try {
+      const result = await this.checkpoints.restoreFile(pathOrRel);
+      if (!result) {
+        this.post({
+          type: "revertResult",
+          path: pathOrRel,
+          ok: false,
+          error:
+            "No prior snapshot for this file (the agent created it before checkpointing started, or it's outside the workspace)."
+        });
+        return;
+      }
+      // Synchronize the VS Code buffer with the restored file on disk.
+      // Without this, an editor that already had this file open keeps the
+      // stale in-memory version and the user can't see the rollback. Two
+      // cases:
+      //   • File was deleted (existed:false snapshot): close the editor.
+      //   • File was overwritten: revert the buffer to disk via the
+      //     workbench command. This works even if the user had unsaved
+      //     edits (those edits would have been the agent's post-write
+      //     content anyway, so dropping them is correct).
+      try {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        const isAbs =
+          pathOrRel.startsWith("/") || /^[A-Za-z]:[\\/]/.test(pathOrRel);
+        const uri = isAbs
+          ? vscode.Uri.file(pathOrRel)
+          : root
+            ? vscode.Uri.joinPath(root, pathOrRel)
+            : null;
+        if (uri) {
+          if (result.deleted) {
+            // Try to close the now-deleted file's tab.
+            await vscode.commands.executeCommand(
+              "vscode.removeFromRecentlyOpened",
+              uri
+            );
+          } else {
+            // Force-refresh: show the file and revert its buffer to disk.
+            await vscode.window.showTextDocument(uri, {
+              preview: false,
+              preserveFocus: false
+            });
+            await vscode.commands.executeCommand(
+              "workbench.action.files.revert"
+            );
+          }
+        }
+      } catch {
+        // best-effort refresh; failure here doesn't change the revert outcome
+      }
+      this.post({ type: "revertResult", path: pathOrRel, ok: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.post({ type: "revertResult", path: pathOrRel, ok: false, error: msg });
+    }
+  }
+
+  /**
+   * Reveal a file in the editor. Accepts either an absolute path or a path
+   * relative to the workspace root. When a line range is given, the editor
+   * scrolls to it and selects that span; otherwise it just opens the file.
+   */
+  private async handleOpenFile(
+    pathOrRel: string,
+    startLine: number,
+    endLine: number
+  ): Promise<void> {
+    let target: vscode.Uri;
+    if (pathOrRel.startsWith("/") || /^[A-Za-z]:\\/.test(pathOrRel)) {
+      target = vscode.Uri.file(pathOrRel);
+    } else {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+      if (!root) {
+        this.post({ type: "error", message: "Open a workspace folder first." });
+        return;
+      }
+      target = vscode.Uri.joinPath(root, pathOrRel);
+    }
+    try {
+      const doc = await vscode.workspace.openTextDocument(target);
+      const options: vscode.TextDocumentShowOptions = { preview: false };
+      if (startLine > 0) {
+        const start = new vscode.Position(Math.max(0, startLine - 1), 0);
+        const endIdx = Math.max(start.line, (endLine || startLine) - 1);
+        const lineLen = doc.lineAt(Math.min(endIdx, doc.lineCount - 1)).text.length;
+        options.selection = new vscode.Range(
+          start,
+          new vscode.Position(endIdx, lineLen)
+        );
+      }
+      await vscode.window.showTextDocument(doc, options);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.post({ type: "error", message: `Could not open ${pathOrRel}: ${msg}` });
+    }
+  }
+
   private async handlePlanOpenFileRef(
     relPath: string,
     startLine: number,
@@ -1522,7 +1692,26 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         sessionId: this.session.id,
         emit: (e) => this.post({ type: "timeline", event: e })
       },
-      onDelta: (d: StreamDelta) => this.post({ type: "delta", delta: d }),
+      onDelta: (d: StreamDelta) => {
+        // Forward stream deltas to the webview verbatim (text, tool_use_*, etc.).
+        this.post({ type: "delta", delta: d });
+        // Usage deltas are the authoritative token counts reported by the
+        // provider. Re-publish them as a typed `tokenUsage` event so the
+        // TokenMeter doesn't need to parse the raw delta envelope.
+        if (d.type === "usage" && d.usage) {
+          this.post({
+            type: "tokenUsage",
+            inputTokens: d.usage.inputTokens,
+            outputTokens: d.usage.outputTokens,
+            cacheReadTokens: d.usage.cacheReadTokens,
+            cacheCreatedTokens: d.usage.cacheCreatedTokens,
+            costUsd: d.usage.costUsd,
+            sessionId: d.usage.sessionId,
+            source: mode === "subscription" ? "claude-cli" : "anthropic",
+            rateLimit: d.usage.rateLimit
+          });
+        }
+      },
       externalToolExecution
     });
 
@@ -1531,6 +1720,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       await this.orchestrator.turn(text);
     } finally {
       this.post({ type: "turnEnd" });
+      // Refresh authoritative usage after every turn — Claude Code writes
+      // its session JSONL synchronously, so by this point the new tokens
+      // are on disk and the aggregator will pick them up.
+      void this.broadcastClaudeCodeUsage();
     }
   }
 

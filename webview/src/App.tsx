@@ -34,6 +34,7 @@ type AuthState =
 interface Persisted {
   events?: TimelineEvent[];
   input?: string;
+  pins?: { path: string; label: string }[];
 }
 
 // ── Timeline reducer ─────────────────────────────────────────
@@ -89,11 +90,14 @@ export function App() {
     reason: string;
     taskType: string;
   } | null>(null);
+  const [pins, setPins] = useState<{ path: string; label: string }[]>(
+    initial.pins ?? []
+  );
 
   // Persist non-volatile UI state.
   useEffect(() => {
-    saveState<Persisted>({ events, input });
-  }, [events, input]);
+    saveState<Persisted>({ events, input, pins });
+  }, [events, input, pins]);
 
   // Single inbound message handler.
   useEffect(() => {
@@ -273,9 +277,27 @@ export function App() {
         skillSuggestion={skillSuggestion}
         onDismissSkillSuggestion={() => setSkillSuggestion(null)}
         onInserted={() => setPendingInsert(null)}
+        pins={pins}
+        onPin={(p) =>
+          setPins((curr) =>
+            curr.some((x) => x.path === p.path) ? curr : [...curr, p]
+          )
+        }
+        onUnpin={(path) => setPins((curr) => curr.filter((p) => p.path !== path))}
+        onClearPins={() => setPins([])}
         onInput={setInput}
         onSubmit={(text) => {
-          send({ type: "prompt", text });
+          // Auto-prepend pinned-file mentions so the agent reliably has
+          // them in scope. We use the @-mention syntax the agent already
+          // resolves, separated by spaces, then a blank line before the
+          // user's text. Skip pins that the user has already mentioned.
+          const lowered = text.toLowerCase();
+          const auto = pins
+            .filter((p) => !lowered.includes(`@${p.label.toLowerCase()}`))
+            .map((p) => `@${p.label}`)
+            .join(" ");
+          const finalText = auto ? `${auto}\n\n${text}` : text;
+          send({ type: "prompt", text: finalText });
           setInput("");
         }}
         onCancel={() => send({ type: "cancel" })}

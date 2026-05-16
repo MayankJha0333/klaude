@@ -37,9 +37,57 @@ export class AnthropicProvider implements ChatProvider {
     let attempt = 0;
     while (true) {
       try {
-        const stream = this.client.messages.stream(params);
-        for await (const event of stream) {
+        // Use `messages.create({stream:true}).withResponse()` rather than
+        // `messages.stream(...)` so we can access the raw `Response` object
+        // and read Anthropic's authoritative rate-limit headers:
+        //   anthropic-ratelimit-tokens-limit / -remaining / -reset
+        //   anthropic-ratelimit-input-tokens-limit / -remaining / -reset
+        //   anthropic-ratelimit-output-tokens-limit / -remaining / -reset
+        //   anthropic-ratelimit-requests-limit / -remaining / -reset
+        // These are the exact same numbers Anthropic uses to enforce the
+        // quota, so the TokenMeter can show server-truth instead of a
+        // client-side guess.
+        const apiPromise = this.client.messages.create({
+          ...params,
+          stream: true
+        });
+        const withResp = await apiPromise.withResponse();
+        const rawStream = withResp.data;
+        const headers = withResp.response.headers;
+        const limits = parseRateLimitHeaders(headers);
+        if (limits) {
+          yield {
+            type: "usage",
+            usage: { inputTokens: 0, outputTokens: 0, rateLimit: limits }
+          };
+        }
+
+        // Track prompt-side counts seen on message_start so we can emit a
+        // single authoritative usage delta once output_tokens is final.
+        let promptUsage: {
+          inputTokens: number;
+          cacheReadTokens?: number;
+          cacheCreatedTokens?: number;
+        } | null = null;
+        for await (const event of rawStream) {
           switch (event.type) {
+            case "message_start":
+              if (event.message?.usage) {
+                // Cast: older @anthropic-ai/sdk types omit cache_*_input_tokens.
+                // The fields are present on the wire — cast through unknown so
+                // tsc doesn't reject the runtime-safe access.
+                const u = event.message.usage as unknown as {
+                  input_tokens?: number;
+                  cache_read_input_tokens?: number;
+                  cache_creation_input_tokens?: number;
+                };
+                promptUsage = {
+                  inputTokens: u.input_tokens ?? 0,
+                  cacheReadTokens: u.cache_read_input_tokens ?? undefined,
+                  cacheCreatedTokens: u.cache_creation_input_tokens ?? undefined
+                };
+              }
+              break;
             case "content_block_start":
               if (event.content_block.type === "tool_use") {
                 yield {
@@ -57,6 +105,21 @@ export class AnthropicProvider implements ChatProvider {
               break;
             case "content_block_stop":
               yield { type: "tool_use_end" };
+              break;
+            case "message_delta":
+              // The SDK reports the final, authoritative output_tokens here.
+              if (event.usage && promptUsage) {
+                yield {
+                  type: "usage",
+                  usage: {
+                    inputTokens: promptUsage.inputTokens,
+                    outputTokens: event.usage.output_tokens ?? 0,
+                    cacheReadTokens: promptUsage.cacheReadTokens,
+                    cacheCreatedTokens: promptUsage.cacheCreatedTokens,
+                    rateLimit: limits ?? undefined
+                  }
+                };
+              }
               break;
             case "message_stop":
               yield { type: "done" };
@@ -133,6 +196,78 @@ function backoffMs(attempt: number): number {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Pull Anthropic's authoritative rate-limit info out of a `Response`'s
+ * headers. Anthropic sends `anthropic-ratelimit-*` headers on *every*
+ * response, both success and 429. These are the same numbers the UI on
+ * claude.ai's Usage page uses, so surfacing them in the meter lets us
+ * show server-truth rather than a client-side estimate.
+ *
+ * Returns `null` when no rate-limit headers are present (some endpoints
+ * or proxy configurations may strip them).
+ */
+function parseRateLimitHeaders(
+  headers: { get(name: string): string | null }
+): RateLimitInfo | null {
+  const num = (k: string): number | undefined => {
+    const v = headers.get(k);
+    if (v === null) return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const reset = (k: string): number | undefined => {
+    const v = headers.get(k);
+    if (!v) return undefined;
+    const t = Date.parse(v);
+    return Number.isFinite(t) ? t : undefined;
+  };
+
+  const out: RateLimitInfo = {
+    tokens: {
+      limit: num("anthropic-ratelimit-tokens-limit"),
+      remaining: num("anthropic-ratelimit-tokens-remaining"),
+      resetsAt: reset("anthropic-ratelimit-tokens-reset")
+    },
+    inputTokens: {
+      limit: num("anthropic-ratelimit-input-tokens-limit"),
+      remaining: num("anthropic-ratelimit-input-tokens-remaining"),
+      resetsAt: reset("anthropic-ratelimit-input-tokens-reset")
+    },
+    outputTokens: {
+      limit: num("anthropic-ratelimit-output-tokens-limit"),
+      remaining: num("anthropic-ratelimit-output-tokens-remaining"),
+      resetsAt: reset("anthropic-ratelimit-output-tokens-reset")
+    },
+    requests: {
+      limit: num("anthropic-ratelimit-requests-limit"),
+      remaining: num("anthropic-ratelimit-requests-remaining"),
+      resetsAt: reset("anthropic-ratelimit-requests-reset")
+    }
+  };
+
+  // If every bucket is empty, treat as absent so the meter falls back to
+  // local aggregation rather than showing all-zero quotas.
+  const anyKnown =
+    out.tokens.limit !== undefined ||
+    out.inputTokens.limit !== undefined ||
+    out.outputTokens.limit !== undefined ||
+    out.requests.limit !== undefined;
+  return anyKnown ? out : null;
+}
+
+export interface RateLimitBucket {
+  limit?: number;
+  remaining?: number;
+  resetsAt?: number;
+}
+
+export interface RateLimitInfo {
+  tokens: RateLimitBucket;
+  inputTokens: RateLimitBucket;
+  outputTokens: RateLimitBucket;
+  requests: RateLimitBucket;
 }
 
 function humanize(info: ErrInfo): string {
