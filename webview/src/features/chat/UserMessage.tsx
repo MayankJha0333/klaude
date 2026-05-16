@@ -154,7 +154,7 @@ export function UserMessage({
         Y
       </div>
       <div
-        className={`md flex-1 min-w-0 leading-[1.65] break-words text-[13.5px] py-2 pr-20 pl-4 text-t1 relative space-y-1.5 select-text [&>p]:my-0 [&>p+p]:mt-2${
+        className={`md flex-1 min-w-0 leading-[1.65] break-words text-[13.5px] py-1 pr-20 pl-4 text-t1 relative space-y-1.5 select-text [&>p]:my-0 [&>p+p]:mt-2${
           editable
             ? " cursor-text rounded-lg -ml-2.5 px-2.5 transition-[background,box-shadow] duration-[140ms] hover:bg-accent-soft hover:shadow-[inset_0_0_0_1px_var(--accent-mid)] focus-visible:outline-none focus-visible:bg-accent-soft focus-visible:shadow-[inset_0_0_0_1px_var(--accent-glow)]"
             : ""

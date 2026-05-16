@@ -279,7 +279,7 @@ export function ChatScreen({
       <div
         ref={logRef}
         onScroll={onScroll}
-        className="flex-1 overflow-y-auto px-4 pt-4 pb-4 flex flex-col gap-5 scroll-smooth [&>*]:flex-shrink-0 relative"
+        className="flex-1 overflow-y-auto px-4 pt-4 pb-4 flex flex-col gap-2.5 scroll-smooth [&>*]:flex-shrink-0 relative"
       >
         <AnimatePresence mode="wait" initial={false}>
           {grouped.groups.length === 0 && !streaming && (
@@ -767,7 +767,7 @@ function renderGroup(
   for (const b of g.responseBlocks) if (b.kind === "toolGroup") allToolItems.push(...b.items);
   const fileEdits = extractFileEdits(allToolItems);
   return (
-    <div key={g.turnId} className="mt-1 mx-1.5 mb-1 pl-9">
+    <div key={g.turnId} className="mx-1.5 pl-9">
       {hasWork && (
         <>
           <TurnHeader
@@ -786,7 +786,7 @@ function renderGroup(
         </>
       )}
       {g.responseBlocks.length > 0 && (
-        <div className="flex flex-col gap-2 mt-2">
+        <div className="flex flex-col gap-1.5 mt-1">
           {g.responseBlocks.map((b, i) => {
             const isLastNarrative =
               b.kind === "narrative" &&
