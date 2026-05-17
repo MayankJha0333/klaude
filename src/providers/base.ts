@@ -1,11 +1,12 @@
-import { Message, StreamDelta, ToolDefinition } from "../core/types.js";
+import { Message, StreamDelta } from "../core/types.js";
 
 export interface ProviderRequest {
   model: string;
   maxTokens: number;
   system: string;
   messages: Message[];
-  tools: ToolDefinition[];
+  /** Kept as a typed slot for forward-compat. The CLI doesn't consume it. */
+  tools: unknown[];
 }
 
 export interface ChatProvider {

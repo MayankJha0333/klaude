@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { send } from "../../lib/rpc";
 
 interface ErrorBannerProps {
   text: string;
@@ -8,7 +7,7 @@ interface ErrorBannerProps {
 
 export function ErrorBanner({ text, onDismiss }: ErrorBannerProps) {
   const isRateLimit = /429|rate.?limit/i.test(text);
-  const isAuth = /401|403|auth rejected/i.test(text);
+  const isAuth = /401|403|auth rejected|login/i.test(text);
   const title = isRateLimit ? "Rate limited" : isAuth ? "Authentication failed" : "Error";
   const icon = isRateLimit ? "⏱" : isAuth ? "🔒" : "⚠";
 
@@ -39,15 +38,9 @@ export function ErrorBanner({ text, onDismiss }: ErrorBannerProps) {
       <div className="text-[12px] leading-[1.55] text-t2 font-mono whitespace-pre-wrap break-words">
         {text}
       </div>
-      {(isAuth || isRateLimit) && (
-        <div className="mt-2 flex gap-1.5">
-          <button
-            type="button"
-            className="bg-transparent border border-[rgba(248,113,113,0.4)] text-err px-[11px] py-1 rounded-md cursor-pointer text-[11.5px] font-semibold font-[inherit] transition-colors duration-[120ms] hover:bg-[rgba(248,113,113,0.15)]"
-            onClick={() => send({ type: "authReset" })}
-          >
-            {isRateLimit ? "Switch auth" : "Logout & Reconnect"}
-          </button>
+      {isAuth && (
+        <div className="mt-2 text-[11.5px] text-t3 leading-[1.5]">
+          Re-authenticate in a terminal: <code className="font-mono text-t1">claude login</code>
         </div>
       )}
     </motion.div>

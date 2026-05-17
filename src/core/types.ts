@@ -22,24 +22,6 @@ export type ContentBlock =
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
 
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-}
-
-export interface ToolHandler {
-  def: ToolDefinition;
-  needsApproval: (input: Record<string, unknown>, mode: PermissionMode) => boolean;
-  run: (input: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
-}
-
-export interface ToolContext {
-  workspaceRoot: string;
-  sessionId: string;
-  emit: (event: TimelineEvent) => void;
-}
-
 export type PermissionMode = "default" | "plan" | "auto";
 
 export type TaskType =

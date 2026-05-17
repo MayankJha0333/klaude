@@ -1,20 +1,10 @@
 import * as vscode from "vscode";
 import { Session } from "../core/session.js";
 import { Orchestrator } from "../core/orchestrator.js";
-import { defaultTools } from "../tools/index.js";
-import { createGate } from "../core/permissions.js";
 import { PermissionMode, StreamDelta, PlanRevisionMeta } from "../core/types.js";
 import { buildSystemPrompt } from "./system-prompt.js";
-import {
-  getApiKey,
-  storeApiKey,
-  deleteApiKey,
-  validateAnthropicKey,
-  getAuthMode,
-  setAuthMode,
-  clearAuthMode
-} from "../secrets.js";
-import { AuthMode, createProvider } from "../providers/factory.js";
+import { createProvider } from "../providers/factory.js";
+import { getToken, setToken, deleteToken, classifyToken } from "../secrets.js";
 import { CheckpointService } from "../services/checkpoint.js";
 import { HistoryService, deriveTitle } from "../services/history.js";
 import { PlanDecorationService } from "../services/plan-decorations.js";
@@ -48,6 +38,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   private decorations: PlanDecorationService;
   private artifacts: PlanArtifactManager;
   private saveTimer?: NodeJS.Timeout;
+  /** Sticky flag set when the user has clicked Logout this session.
+   *  `broadcastAuthState` ORs this with "no token in SecretStorage" to
+   *  decide whether the webview should show the welcome screen — so even
+   *  if SecretStorage somehow returns a stale token, the explicit logout
+   *  takes precedence until the user signs back in. */
+  private signedOut = false;
 
   constructor(private readonly ctx: vscode.ExtensionContext) {
     this.history = new HistoryService(ctx);
@@ -139,11 +135,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     const rel = String(input.path ?? input.file_path ?? input.filePath ?? "");
     if (!rel) return;
     const name = String(e.meta?.name ?? "").toLowerCase();
-    // fs_write (api-key flow) + Claude CLI's Write/Edit/MultiEdit/NotebookEdit/Update.
-    if (
-      name === "fs_write" ||
-      /^(write|edit|multiedit|notebookedit|update|create|str_replace_editor)/.test(name)
-    ) {
+    // Claude CLI's Write / Edit / MultiEdit / NotebookEdit / Update tools.
+    if (/^(write|edit|multiedit|notebookedit|update|create|str_replace_editor)/.test(name)) {
       void this.checkpoints.addFileToLatest(rel);
     }
   }
@@ -274,25 +267,21 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  /**
+   * Compute the authoritative auth status by inspecting SecretStorage.
+   * `authed` is true when a token is present AND the user hasn't actively
+   * signed out this session. We broadcast both the auth status and the
+   * model / permission-mode so the webview can hydrate ChatScreen state.
+   */
   async broadcastAuthState() {
     const cfg = vscode.workspace.getConfiguration("iridescent");
-    const mode = getAuthMode(this.ctx);
     const model = cfg.get<string>("model", "claude-sonnet-4-6");
     const permissionMode = cfg.get<PermissionMode>("permissionMode", "default");
-
-    let authed = false;
-    if (mode === "apikey") {
-      authed = !!(await getApiKey(this.ctx, "anthropic"));
-    } else if (mode === "subscription") {
-      // CLI is bundled — once the user has signed in (i.e. picked subscription
-      // mode), trust it. Real-world auth errors surface in the chat stream.
-      authed = true;
-    }
-
+    const token = await getToken(this.ctx);
+    const authed = !this.signedOut && !!token;
     this.post({
       type: "auth",
       authed,
-      mode: mode ?? null,
       model,
       permissionMode
     });
@@ -300,6 +289,87 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       await this.broadcastModels();
       await this.broadcastSkills();
     }
+  }
+
+  /**
+   * Sign out. Iridescent owns auth state entirely (token in SecretStorage),
+   * so logout is a single durable operation: confirm → cancel any in-flight
+   * stream → delete the secret → flip the webview to the welcome screen.
+   * No CLI invocation, no `~/.claude/` file manipulation. The user can sign
+   * back in by pasting a fresh token on the welcome screen.
+   */
+  /**
+   * Run a shell command in a fresh, integrated terminal.
+   *
+   * IMPORTANT: we always dispose any existing "Iridescent Setup" terminal
+   * before creating a new one. Re-using a terminal that previously hosted
+   * `claude` (or any other interactive command) would cause `sendText` to
+   * type the new command **as input into the still-running process**
+   * rather than execute it as a shell command. Disposing first guarantees
+   * a clean shell prompt.
+   *
+   * `sendText` is also deferred to the next tick so the new terminal's
+   * shell has time to print its initial prompt — without that, on some
+   * shells (zsh with slow init) the keystrokes can interleave with the
+   * shell startup output.
+   */
+  private runTerminalCommand(command: string): void {
+    const existing = vscode.window.terminals.find(
+      (t) => t.name === "Iridescent Setup"
+    );
+    existing?.dispose();
+    const term = vscode.window.createTerminal({ name: "Iridescent Setup" });
+    term.show(true);
+    setTimeout(() => {
+      term.sendText(command, true);
+    }, 250);
+  }
+
+  private async handleClaudeLogout(): Promise<void> {
+    const pick = await vscode.window.showWarningMessage(
+      "Sign out of Claude?",
+      {
+        modal: true,
+        detail:
+          "Removes the auth token stored in VS Code's SecretStorage and returns you to the welcome screen. Chat history, checkpoints, and pinned files are preserved."
+      },
+      "Sign out"
+    );
+    if (pick !== "Sign out") return;
+    this.orchestrator?.cancel();
+    this.orchestrator = undefined;
+    this.resumeId = undefined;
+    await deleteToken(this.ctx);
+    this.signedOut = true;
+    await this.broadcastAuthState();
+  }
+
+  /**
+   * Accept a user-pasted token from the welcome screen. We do a
+   * format-only check (no network round-trip — the actual validation
+   * happens when the user's first prompt streams through the CLI). Posts
+   * `tokenResult` back for the form to show success/failure inline.
+   */
+  private async handleSubmitToken(rawToken: string): Promise<void> {
+    const token = rawToken.trim();
+    if (!token) {
+      this.post({ type: "tokenResult", ok: false, error: "Token is empty." });
+      return;
+    }
+    const kind = classifyToken(token);
+    if (kind === "unknown") {
+      this.post({
+        type: "tokenResult",
+        ok: false,
+        error:
+          "Unrecognized token format. Use a Claude Code OAuth token (sk-ant-oat…) or an Anthropic Console API key (sk-ant-api…)."
+      });
+      return;
+    }
+    await setToken(this.ctx, token);
+    this.signedOut = false;
+    this.post({ type: "tokenResult", ok: true });
+    await this.broadcastAuthState();
   }
 
   reveal() {
@@ -408,17 +478,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "newSession":
         this.newSession();
         break;
-      case "authSubmitKey":
-        await this.onAuthSubmitKey(String(msg.key ?? ""));
-        break;
-      case "authSubscription":
-        await this.onAuthSubscription();
-        break;
-      case "authReset":
-        await deleteApiKey(this.ctx, "anthropic");
-        await clearAuthMode(this.ctx);
-        await this.broadcastAuthState();
-        break;
       case "refreshAuth":
         await this.broadcastAuthState();
         break;
@@ -444,11 +503,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "runTerminalCommand":
         if (typeof msg.command === "string") {
-          const term =
-            vscode.window.terminals.find((t) => t.name === "Iridescent Setup") ??
-            vscode.window.createTerminal({ name: "Iridescent Setup" });
-          term.show(true);
-          term.sendText(msg.command, true);
+          this.runTerminalCommand(msg.command);
+        }
+        break;
+      case "claudeLogout":
+        await this.handleClaudeLogout();
+        break;
+      case "submitToken":
+        if (typeof msg.token === "string") {
+          await this.handleSubmitToken(msg.token);
         }
         break;
       case "setModel":
@@ -1342,23 +1405,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   // ── Models / skills / search ─────────────────────────────────
 
   private async broadcastModels() {
-    const mode = getAuthMode(this.ctx);
-    this.post({
-      type: "models",
-      models: availableModels(mode),
-      authMode: mode ?? null
-    });
+    this.post({ type: "models", models: availableModels() });
   }
 
   private static readonly DISABLED_SKILLS_KEY = "iridescent.disabledSkills.v1";
 
   private async broadcastSkills() {
-    const mode = getAuthMode(this.ctx);
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const disabled = new Set(
       this.ctx.globalState.get<string[]>(ChatPanelProvider.DISABLED_SKILLS_KEY, [])
     );
-    const skills = await availableSkills(mode, workspaceRoot, disabled);
+    const skills = await availableSkills(workspaceRoot, disabled);
     this.post({ type: "skills", skills });
   }
 
@@ -1545,30 +1602,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     await this.handlePrompt(trimmed);
   }
 
-  private async onAuthSubscription() {
-    await setAuthMode(this.ctx, "subscription");
-    this.post({ type: "authResult", ok: true });
-    await this.broadcastAuthState();
-  }
-
-  private async onAuthSubmitKey(key: string) {
-    const trimmed = key.trim();
-    if (!trimmed) {
-      this.post({ type: "authResult", ok: false, error: "Key is empty." });
-      return;
-    }
-    this.post({ type: "authValidating" });
-    const v = await validateAnthropicKey(trimmed);
-    if (!v.ok) {
-      this.post({ type: "authResult", ok: false, error: v.error ?? "Validation failed." });
-      return;
-    }
-    await storeApiKey(this.ctx, "anthropic", trimmed);
-    await setAuthMode(this.ctx, "apikey");
-    this.post({ type: "authResult", ok: true });
-    await this.broadcastAuthState();
-  }
-
   private async handlePrompt(text: string) {
     if (!text.trim()) return;
     const cfg = vscode.workspace.getConfiguration("iridescent");
@@ -1583,8 +1616,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       []
     );
 
-    const mode = getAuthMode(this.ctx);
-    if (!mode) {
+    // Refuse to start a turn when no token is stored — defends against
+    // race conditions where the user clicks Send during the brief window
+    // between rendering the chat and a sign-out event landing.
+    const token = await getToken(this.ctx);
+    if (!token || this.signedOut) {
+      this.signedOut = !token;
       await this.broadcastAuthState();
       return;
     }
@@ -1598,8 +1635,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     this.ensureCheckpoints(workspaceRoot);
 
     // Per-turn prompt context: classify the task and discover project
-    // conventions so both providers see the same grounding info. Conventions
-    // are cached per-workspace and invalidated by file watcher.
+    // conventions so the CLI gets the same grounding info every time.
+    // Conventions are cached per-workspace and invalidated by file watcher.
     const activeFile = vscode.window.activeTextEditor
       ? vscode.workspace.asRelativePath(vscode.window.activeTextEditor.document.uri)
       : undefined;
@@ -1608,50 +1645,30 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     this.broadcastConventionsStatus(conventions);
 
     let providerInstance;
-    let externalToolExecution = false;
     try {
-      if (mode === "subscription") {
-        providerInstance = createProvider({
-          authMode: "subscription",
-          cwd: workspaceRoot,
-          permissionMode: permMode,
-          allowedBashPatterns: bashAllowlist,
-          disabledSkills,
-          taskType,
-          conventions,
-          getResumeSessionId: () => this.resumeId,
-          setResumeSessionId: (id) => {
-            this.resumeId = id;
-          }
-        });
-        externalToolExecution = true;
-      } else {
-        const apiKey = await getApiKey(this.ctx, "anthropic");
-        if (!apiKey) {
-          await this.broadcastAuthState();
-          return;
-        }
-        providerInstance = createProvider({
-          authMode: "apikey",
-          apiKey,
-          cwd: workspaceRoot
-        });
-      }
+      providerInstance = createProvider({
+        cwd: workspaceRoot,
+        permissionMode: permMode,
+        allowedBashPatterns: bashAllowlist,
+        disabledSkills,
+        taskType,
+        conventions,
+        getResumeSessionId: () => this.resumeId,
+        setResumeSessionId: (id) => {
+          this.resumeId = id;
+        },
+        token
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.post({ type: "error", message: msg });
       return;
     }
 
-    const gate = createGate(permMode, bashAllowlist);
-    const tools = defaultTools();
-    const isClaudeCli = mode === "subscription";
-
-    // Per-turn prompt — pulls in the current workspace root and active editor
-    // so the agent knows it's sitting *inside* the user's project rather
-    // than treating the conversation as a generic chat. The api-key path
-    // composes everything (mode + task-type + conventions) into one string;
-    // the CLI path appends them as separate --append-system-prompt flags.
+    // The CLI provider exposes its own permission UI + handles approvals
+    // internally via `--permission-mode`; we just compose the system
+    // prompt with the same per-mode / per-task / conventions content the
+    // user expects.
     const systemPrompt = buildSystemPrompt({
       workspaceRoot,
       activeFile,
@@ -1659,7 +1676,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       permissionMode: permMode,
       taskType,
       conventions,
-      isClaudeCli
+      isClaudeCli: true
     });
 
     this.maybeShowConventionsBanner(conventions);
@@ -1672,31 +1689,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       model,
       maxTokens,
       systemPrompt,
-      tools,
-      gate,
-      approve: async (req) => {
-        const label = req.destructive ? `⚠ DESTRUCTIVE: ${req.summary}` : req.summary;
-        const pick = await vscode.window.showInformationMessage(
-          label,
-          { modal: false },
-          "Allow once",
-          "Always",
-          "Deny"
-        );
-        if (pick === "Allow once") return "once";
-        if (pick === "Always") return "always";
-        return "deny";
-      },
-      ctx: {
-        workspaceRoot,
-        sessionId: this.session.id,
-        emit: (e) => this.post({ type: "timeline", event: e })
-      },
       onDelta: (d: StreamDelta) => {
         // Forward stream deltas to the webview verbatim (text, tool_use_*, etc.).
         this.post({ type: "delta", delta: d });
         // Usage deltas are the authoritative token counts reported by the
-        // provider. Re-publish them as a typed `tokenUsage` event so the
+        // CLI. Re-publish them as a typed `tokenUsage` event so the
         // TokenMeter doesn't need to parse the raw delta envelope.
         if (d.type === "usage" && d.usage) {
           this.post({
@@ -1707,12 +1704,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             cacheCreatedTokens: d.usage.cacheCreatedTokens,
             costUsd: d.usage.costUsd,
             sessionId: d.usage.sessionId,
-            source: mode === "subscription" ? "claude-cli" : "anthropic",
+            source: "claude-cli",
             rateLimit: d.usage.rateLimit
           });
         }
-      },
-      externalToolExecution
+      }
     });
 
     this.post({ type: "turnStart" });
@@ -1815,16 +1811,7 @@ export interface ModelInfo {
  *
  * Reference: https://code.claude.com/docs/en/model-config
  */
-function availableModels(authMode: AuthMode | undefined): ModelInfo[] {
-  if (authMode !== "subscription") {
-    // api-key mode → canonical Messages API IDs only, no aliases, no [1m].
-    return [
-      { value: "claude-opus-4-7",   label: "Opus 4.7",   note: "best reasoning",     supportsTools: true, group: "version" },
-      { value: "claude-sonnet-4-6", label: "Sonnet 4.6", note: "balanced",           supportsTools: true, group: "version" },
-      { value: "claude-haiku-4-5",  label: "Haiku 4.5",  note: "fastest · low cost", supportsTools: true, group: "version" }
-    ];
-  }
-
+function availableModels(): ModelInfo[] {
   // Subscription (Claude Code CLI). Aliases first (the recommended path),
   // then explicit versions including the two 1M-context variants.
   return [
@@ -1865,28 +1852,21 @@ export interface SkillInfo {
  * on the prompt; we can't actually filter them at the CLI layer).
  */
 async function availableSkills(
-  authMode: AuthMode | undefined,
   workspaceRoot: string | undefined,
   disabled: Set<string>
 ): Promise<SkillInfo[]> {
-  // Always-on tools shipped by Iridescent.
-  const tools: SkillInfo[] = [
-    { id: "fs_read",  name: "Read",  category: "tool", description: "Read files in the workspace", enabled: true,  toggleable: false },
-    { id: "fs_write", name: "Write", category: "tool", description: "Create and edit files",        enabled: true,  toggleable: false },
-    { id: "bash",    name: "Bash",  category: "tool", description: "Run shell commands",           enabled: true,  toggleable: false }
+  // Capabilities surfaced by Claude Code (CLI). Marked `external` because
+  // they execute inside the CLI agent — Iridescent doesn't own them.
+  const claudeCode: SkillInfo[] = [
+    { id: "Read",       name: "Read",       category: "tool",  description: "Read files in the workspace", enabled: true, toggleable: false, external: true },
+    { id: "Write",      name: "Write",      category: "tool",  description: "Create and edit files",       enabled: true, toggleable: false, external: true },
+    { id: "Bash",       name: "Bash",       category: "tool",  description: "Run shell commands",          enabled: true, toggleable: false, external: true },
+    { id: "Glob",       name: "Glob",       category: "skill", description: "Find files by glob pattern",  enabled: true, toggleable: false, external: true },
+    { id: "Grep",       name: "Grep",       category: "skill", description: "Search file contents",        enabled: true, toggleable: false, external: true },
+    { id: "Edit",       name: "Edit",       category: "skill", description: "Targeted in-file edits",      enabled: true, toggleable: false, external: true },
+    { id: "WebFetch",   name: "WebFetch",   category: "skill", description: "Fetch and read URLs",         enabled: true, toggleable: false, external: true },
+    { id: "Task",       name: "Sub-agents", category: "skill", description: "Spawn parallel sub-agents",   enabled: true, toggleable: false, external: true }
   ];
-
-  // Capabilities surfaced by Claude Code itself when running in subscription
-  // (CLI) mode. Marked `external` because they execute inside the CLI agent.
-  const claudeCode: SkillInfo[] = authMode === "subscription"
-    ? [
-        { id: "Glob",       name: "Glob",       category: "skill", description: "Find files by glob pattern", enabled: true, toggleable: false, external: true },
-        { id: "Grep",       name: "Grep",       category: "skill", description: "Search file contents",        enabled: true, toggleable: false, external: true },
-        { id: "Edit",       name: "Edit",       category: "skill", description: "Targeted in-file edits",       enabled: true, toggleable: false, external: true },
-        { id: "WebFetch",   name: "WebFetch",   category: "skill", description: "Fetch and read URLs",          enabled: true, toggleable: false, external: true },
-        { id: "Task",       name: "Sub-agents", category: "skill", description: "Spawn parallel sub-agents",    enabled: true, toggleable: false, external: true }
-      ]
-    : [];
 
   // User-installed skills from disk. Both `~/.claude/skills/<name>/SKILL.md`
   // and `<ws>/.claude/skills/<name>/SKILL.md` are scanned; failures are
@@ -1913,7 +1893,5 @@ async function availableSkills(
     { id: "mcp", name: "MCP Servers", category: "integration", description: "Model Context Protocol servers (configure to enable)", enabled: false, toggleable: false }
   ];
 
-  return [...tools, ...claudeCode, ...custom, ...integrations];
+  return [...claudeCode, ...custom, ...integrations];
 }
-
-export type { AuthMode };

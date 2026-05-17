@@ -1,89 +1,46 @@
+// ─────────────────────────────────────────────────────────────
+// Auth-token storage for Iridescent's subscription-only flow.
+//
+// Tokens we accept (both work with the bundled Claude Code CLI when
+// passed as ANTHROPIC_API_KEY):
+//   • `sk-ant-oat...`   — Claude Code subscription OAuth token
+//   • `sk-ant-api...`   — Anthropic Console API key
+//
+// We never write to `~/.claude/` ourselves — instead we inject the
+// stored token into the CLI's environment when we spawn it. This keeps
+// auth fully owned by Iridescent (logout → secret deleted → CLI sees
+// no key) and avoids touching files the CLI manages.
+// ─────────────────────────────────────────────────────────────
+
 import * as vscode from "vscode";
-import { AuthMode } from "./providers/factory.js";
 
-const keyFor = (provider: string) => `iridescent.apiKey.${provider}`;
-const AUTH_MODE_KEY = "iridescent.authMode";
+const TOKEN_KEY = "iridescent.claudeToken.v1";
 
-export async function getApiKey(
-  ctx: vscode.ExtensionContext,
-  provider: string
+export async function getToken(
+  ctx: vscode.ExtensionContext
 ): Promise<string | undefined> {
-  return ctx.secrets.get(keyFor(provider));
+  return ctx.secrets.get(TOKEN_KEY);
 }
 
-export async function storeApiKey(
+export async function setToken(
   ctx: vscode.ExtensionContext,
-  provider: string,
-  key: string
-) {
-  await ctx.secrets.store(keyFor(provider), key);
+  token: string
+): Promise<void> {
+  await ctx.secrets.store(TOKEN_KEY, token);
 }
 
-export async function deleteApiKey(
-  ctx: vscode.ExtensionContext,
-  provider: string
-) {
-  await ctx.secrets.delete(keyFor(provider));
+export async function deleteToken(
+  ctx: vscode.ExtensionContext
+): Promise<void> {
+  await ctx.secrets.delete(TOKEN_KEY);
 }
 
-export function getAuthMode(ctx: vscode.ExtensionContext): AuthMode | undefined {
-  return ctx.globalState.get<AuthMode>(AUTH_MODE_KEY);
-}
+export type TokenKind = "oauth" | "api" | "unknown";
 
-export async function setAuthMode(ctx: vscode.ExtensionContext, mode: AuthMode) {
-  await ctx.globalState.update(AUTH_MODE_KEY, mode);
-}
-
-export async function clearAuthMode(ctx: vscode.ExtensionContext) {
-  await ctx.globalState.update(AUTH_MODE_KEY, undefined);
-}
-
-export async function setApiKey(ctx: vscode.ExtensionContext) {
-  const key = await vscode.window.showInputBox({
-    prompt: "Anthropic Console API key (sk-ant-api03-…)",
-    password: true,
-    ignoreFocusOut: true
-  });
-  if (!key) return;
-  await storeApiKey(ctx, "anthropic", key);
-  await setAuthMode(ctx, "apikey");
-  vscode.window.showInformationMessage("Iridescent: API key stored.");
-}
-
-export async function validateAnthropicKey(
-  key: string
-): Promise<{ ok: boolean; error?: string }> {
-  if (!key.startsWith("sk-ant-api")) {
-    return {
-      ok: false,
-      error:
-        "Only Anthropic Console API keys (sk-ant-api03-…) are supported here. For Claude Pro/Max subscriptions, use the Subscription tab (requires the claude CLI)."
-    };
-  }
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1,
-        messages: [{ role: "user", content: "hi" }]
-      })
-    });
-    if (res.ok) return { ok: true };
-    if (res.status === 401 || res.status === 403) {
-      const text = await res.text().catch(() => "");
-      return { ok: false, error: `Invalid API key (${res.status}). ${text.slice(0, 160)}` };
-    }
-    const bodyText = await res.text().catch(() => "");
-    if (res.status === 404 || /model/i.test(bodyText)) return { ok: true };
-    return { ok: false, error: `HTTP ${res.status}: ${bodyText.slice(0, 200)}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: `Network error: ${msg}` };
-  }
+/** Classify a pasted token without making any network call. */
+export function classifyToken(token: string): TokenKind {
+  const t = token.trim();
+  if (t.startsWith("sk-ant-oat")) return "oauth";
+  if (t.startsWith("sk-ant-api")) return "api";
+  return "unknown";
 }

@@ -8,7 +8,6 @@ import {
   send,
   TimelineEvent,
   EditorContext,
-  AuthMode,
   PermissionMode,
   ModelInfo,
   SkillInfo,
@@ -42,7 +41,7 @@ import { PlanCard, foldPlanState, looksLikePlanFile } from "../plan";
 import type { PlanRevisionView } from "../plan";
 
 export interface ChatScreenProps {
-  authMode: AuthMode | null;
+
   model: string;
   permissionMode: PermissionMode;
   events: TimelineEvent[];
@@ -81,7 +80,6 @@ export interface ChatScreenProps {
 }
 
 export function ChatScreen({
-  authMode,
   model,
   permissionMode,
   events,
@@ -252,7 +250,7 @@ export function ChatScreen({
   return (
     <>
       <Header
-        authMode={authMode}
+
         permissionMode={permissionMode}
         busy={busy}
         conventions={conventions}
@@ -311,7 +309,7 @@ export function ChatScreen({
                 permissionMode={permissionMode}
                 models={models}
                 skills={skills}
-                authMode={authMode}
+        
                 onCancel={() => setEditingTurnId(null)}
                 onSubmit={(text) => {
                   setPendingEdit({ turnId: g.id, text, messagesAfter });
@@ -473,7 +471,7 @@ export function ChatScreen({
           }}
           onCancel={onCancel}
           busy={busy}
-          authMode={authMode}
+  
           model={model}
           permissionMode={permissionMode}
           models={models}
@@ -887,7 +885,6 @@ function InlineMessageEditor({
   permissionMode,
   models,
   skills,
-  authMode,
   onCancel,
   onSubmit
 }: {
@@ -897,7 +894,6 @@ function InlineMessageEditor({
   permissionMode: PermissionMode;
   models: ReadonlyArray<ModelInfo>;
   skills: ReadonlyArray<SkillInfo>;
-  authMode: AuthMode | null;
   onCancel: () => void;
   onSubmit: (text: string) => void;
 }) {
@@ -912,7 +908,7 @@ function InlineMessageEditor({
           onSubmit={onSubmit}
           onCancel={onCancel}
           busy={busy}
-          authMode={authMode}
+  
           model={model}
           permissionMode={permissionMode}
           models={models}

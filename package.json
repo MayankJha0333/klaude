@@ -1,13 +1,21 @@
 {
   "name": "iridescent",
   "displayName": "Iridescent",
-  "description": "Agentic AI coding assistant for VS Code — inspired by Claude Code.",
+  "description": "Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.",
   "version": "0.1.0",
   "publisher": "iridescent",
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["AI", "Programming Languages", "Other"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -29,30 +37,56 @@
       ]
     },
     "commands": [
-      { "command": "iridescent.newChat",       "title": "Iridescent: New Chat" },
-      { "command": "iridescent.toggleChat",    "title": "Iridescent: Toggle Chat Panel" },
-      { "command": "iridescent.inlineEdit",    "title": "Iridescent: Inline Edit" },
-      { "command": "iridescent.explain",       "title": "Iridescent: Explain Selection" },
-      { "command": "iridescent.refactor",      "title": "Iridescent: Refactor Selection" },
-      { "command": "iridescent.fixBug",        "title": "Iridescent: Fix Bug" },
-      { "command": "iridescent.cycleMode",     "title": "Iridescent: Cycle Permission Mode" },
-      { "command": "iridescent.setApiKey",     "title": "Iridescent: Set API Key" },
-      { "command": "iridescent.sendSelection", "title": "Iridescent: Send Selection to Chat" },
-      { "command": "iridescent.commentOnSelection", "title": "Iridescent: Comment on Selection" },
-      { "command": "iridescent.generateConventions", "title": "Iridescent: Generate CLAUDE.md" }
+      {
+        "command": "iridescent.newChat",
+        "title": "Iridescent: New Chat"
+      },
+      {
+        "command": "iridescent.toggleChat",
+        "title": "Iridescent: Toggle Chat Panel"
+      },
+      {
+        "command": "iridescent.cycleMode",
+        "title": "Iridescent: Cycle Permission Mode"
+      },
+      {
+        "command": "iridescent.sendSelection",
+        "title": "Iridescent: Send Selection to Chat"
+      },
+      {
+        "command": "iridescent.commentOnSelection",
+        "title": "Iridescent: Comment on Selection"
+      },
+      {
+        "command": "iridescent.generateConventions",
+        "title": "Iridescent: Generate CLAUDE.md"
+      }
     ],
     "keybindings": [
-      { "command": "iridescent.toggleChat",    "key": "ctrl+shift+i", "mac": "cmd+shift+i" },
-      { "command": "iridescent.inlineEdit",    "key": "ctrl+i",       "mac": "cmd+i",       "when": "editorTextFocus" },
-      { "command": "iridescent.cycleMode",     "key": "shift+tab",    "when": "iridescent.chatFocused" },
-      { "command": "iridescent.sendSelection", "key": "ctrl+l",       "mac": "cmd+l",       "when": "editorHasSelection" }
+      {
+        "command": "iridescent.toggleChat",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i"
+      },
+      {
+        "command": "iridescent.cycleMode",
+        "key": "shift+tab",
+        "when": "iridescent.chatFocused"
+      },
+      {
+        "command": "iridescent.sendSelection",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "editorHasSelection"
+      }
     ],
     "menus": {
       "editor/context": [
-        { "command": "iridescent.explain",  "group": "iridescent@1", "when": "editorHasSelection" },
-        { "command": "iridescent.refactor", "group": "iridescent@2", "when": "editorHasSelection" },
-        { "command": "iridescent.inlineEdit","group": "iridescent@3" },
-        { "command": "iridescent.commentOnSelection", "group": "iridescent@4", "when": "editorHasSelection" }
+        {
+          "command": "iridescent.commentOnSelection",
+          "group": "iridescent@1",
+          "when": "editorHasSelection"
+        }
       ]
     },
     "configuration": {
@@ -61,13 +95,17 @@
         "iridescent.model": {
           "type": "string",
           "default": "claude-sonnet-4-5",
-          "description": "Model ID. In subscription mode passed to 'claude -p --model'. In API-key mode, sent as Messages API 'model' field."
+          "description": "Model ID passed to 'claude -p --model'. Use a CLI alias (sonnet, opus, haiku, opusplan, default) or an explicit version (claude-sonnet-4-6, etc.)."
         },
         "iridescent.permissionMode": {
           "type": "string",
-          "enum": ["default", "plan", "auto"],
+          "enum": [
+            "default",
+            "plan",
+            "auto"
+          ],
           "default": "default",
-          "description": "Tool approval behavior. 'default' prompts before each action; 'plan' is read-only / no execution; 'auto' auto-approves fs_read and bash commands matching allowedBashPatterns."
+          "description": "Tool approval behavior. 'default' prompts before each action; 'plan' is read-only / no execution; 'auto' auto-approves the Claude CLI's standard read/search tools and bash commands matching allowedBashPatterns."
         },
         "iridescent.maxTokens": {
           "type": "number",
@@ -76,30 +114,34 @@
         },
         "iridescent.allowedBashPatterns": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["^git (status|diff|log|branch)$", "^npm (test|run test)$"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "^git (status|diff|log|branch)$",
+            "^npm (test|run test)$"
+          ],
           "description": "Regex patterns of bash commands auto-approved in auto mode."
         }
       }
     }
   },
   "scripts": {
-    "build":    "node esbuild.config.mjs && npm --prefix webview run build",
-    "watch":    "node esbuild.config.mjs --watch",
-    "package":  "vsce package",
-    "test":     "vitest run",
-    "lint":     "tsc --noEmit"
+    "build": "node esbuild.config.mjs && npm --prefix webview run build",
+    "watch": "node esbuild.config.mjs --watch",
+    "package": "vsce package",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.1.119",
-    "@anthropic-ai/sdk": "^0.30.0"
+    "@anthropic-ai/claude-code": "^2.1.119"
   },
   "devDependencies": {
-    "@types/node":    "^20.11.0",
-    "@types/vscode":  "^1.90.0",
-    "esbuild":        "^0.24.0",
-    "typescript":     "^5.5.0",
-    "vitest":         "^2.0.0",
-    "@vscode/vsce":   "^3.0.0"
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
   }
 }

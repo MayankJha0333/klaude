@@ -17,7 +17,6 @@ import {
 } from "../../design/primitives";
 import {
   send,
-  AuthMode,
   PermissionMode,
   ModelInfo,
   SkillInfo,
@@ -34,7 +33,6 @@ export interface ComposerProps {
   onSubmit: (text: string) => void;
   onCancel: () => void;
   busy: boolean;
-  authMode: AuthMode | null;
   model: string;
   permissionMode: PermissionMode;
   models: ReadonlyArray<ModelInfo>;

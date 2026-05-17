@@ -14,7 +14,6 @@ const vscode = acquireVsCodeApi();
 
 // ── Domain types ──────────────────────────────────────────────
 
-export type AuthMode = "subscription" | "apikey";
 export type PermissionMode = "default" | "auto" | "plan";
 
 export interface TimelineEvent {
@@ -224,16 +223,15 @@ export type Outbound =
   | { type: "newSession" }
   | { type: "setModel"; model: string }
   | { type: "setPermissionMode"; mode: PermissionMode }
-  | { type: "authReset" }
   | { type: "rewindTo"; turnId: string }
   | { type: "editAt"; turnId: string; text: string; revertFiles: boolean }
-  | { type: "authSubmitKey"; key: string }
-  | { type: "authSubscription" }
   | { type: "openExternal"; url: string }
   | { type: "openFile"; path: string; startLine?: number; endLine?: number }
   | { type: "revertFile"; path: string }
   | { type: "refreshUsage" }
   | { type: "runTerminalCommand"; command: string }
+  | { type: "claudeLogout" }
+  | { type: "submitToken"; token: string }
   | { type: "requestModels" }
   | { type: "requestSkills" }
   | { type: "requestFileSearch"; id: string; query: string }
@@ -303,9 +301,7 @@ export type Outbound =
 // ── Inbound (extension → webview) ─────────────────────────────
 
 export type Inbound =
-  | { type: "auth"; authed: boolean; mode?: AuthMode | null; model?: string; permissionMode?: PermissionMode }
-  | { type: "authValidating" }
-  | { type: "authResult"; ok: boolean; error?: string }
+  | { type: "auth"; authed: boolean; model?: string; permissionMode?: PermissionMode }
   | { type: "hello" }
   | { type: "reset" }
   | { type: "timeline"; event: TimelineEvent }
@@ -315,8 +311,9 @@ export type Inbound =
   | { type: "error"; message: string }
   | { type: "editorContext"; context: EditorContext | null }
   | { type: "rewind"; events: TimelineEvent[] }
-  | { type: "models"; models: ModelInfo[]; authMode: AuthMode | null }
+  | { type: "models"; models: ModelInfo[] }
   | { type: "skills"; skills: SkillInfo[] }
+  | { type: "tokenResult"; ok: boolean; error?: string }
   | { type: "fileSearchResults"; id: string; results: FileSearchResult[] }
   | {
       type: "insertSelection";

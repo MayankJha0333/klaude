@@ -8,14 +8,13 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Icon } from "../../design/icons";
 import { IconButton, Chip } from "../../design/primitives";
-import { send, AuthMode, ConventionsSource, TimelineEvent } from "../../lib/rpc";
+import { send, ConventionsSource, TimelineEvent } from "../../lib/rpc";
 import { findMode } from "./constants";
 import type { PermissionMode } from "../../lib/rpc";
 import { ConventionsStatusPill } from "./ConventionsStatusPill";
 import { TokenMeter } from "./TokenMeter";
 
 interface HeaderProps {
-  authMode: AuthMode | null;
   permissionMode: PermissionMode;
   busy: boolean;
   conventions: {
@@ -30,7 +29,6 @@ interface HeaderProps {
 }
 
 export function Header({
-  authMode,
   permissionMode,
   busy,
   conventions,
@@ -40,7 +38,6 @@ export function Header({
   onOpenPalette
 }: HeaderProps) {
   const mode = findMode(permissionMode);
-  const authLabel = authMode === "subscription" ? "subscription" : "api key";
   const [newChatTick, setNewChatTick] = useState(0);
   const handleNewChat = () => {
     send({ type: "newSession" });
@@ -68,9 +65,9 @@ export function Header({
         <span className="font-bold text-[13.5px] tracking-[-0.3px] text-t1 flex-shrink-0">
           Iridescent
         </span>
-        <Chip tone={authMode === "subscription" ? "accent" : "info"} title={authLabel}>
+        <Chip tone="accent" title="Claude Code subscription">
           <span className="w-1.5 h-1.5 rounded-full bg-current" />
-          {authLabel}
+          subscription
         </Chip>
         <Chip tone="default" title={mode.note}>
           <Icon name={mode.icon} size={10} />
@@ -140,11 +137,12 @@ export function Header({
             />
           )}
         </motion.button>
+        <div className="w-px h-4 bg-b1 mx-1" />
         <IconButton
           icon="logout"
-          title="Logout"
+          title="Sign out of Claude Code"
           size={28}
-          onClick={() => send({ type: "authReset" })}
+          onClick={() => send({ type: "claudeLogout" })}
         />
       </div>
     </header>

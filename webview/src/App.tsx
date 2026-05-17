@@ -11,7 +11,6 @@ import {
   onMessage,
   saveState,
   loadState,
-  AuthMode,
   PermissionMode,
   TimelineEvent,
   EditorContext,
@@ -20,16 +19,24 @@ import {
   ConventionsSource
 } from "./lib/rpc";
 import { Spinner, type CodeInsert } from "./design/primitives";
-import { AuthGate } from "./features/auth/AuthGate";
 import { ChatScreen } from "./features/chat";
+import { WelcomeScreen } from "./features/auth/WelcomeScreen";
 import { FALLBACK_MODELS } from "./features/chat/constants";
 
 // ── Auth state ───────────────────────────────────────────────
+//
+// Subscription-only: the bundled Claude Code CLI is the single transport.
+// We start in `loading` until the host posts its first `auth` message,
+// then flip to either `authed` or `signedOut`. The signed-out state is
+// entered when the user clicks Logout — the panel runs `claude logout`
+// silently and re-broadcasts auth with `authed: false`. The user then
+// either signs back in (WelcomeScreen → `claudeLogin` RPC) or restarts
+// the extension after running `claude login` in a terminal of their own.
 
 type AuthState =
   | { status: "loading" }
-  | { status: "unauthed"; mode: AuthMode | null; error: string | null; validating: boolean }
-  | { status: "authed"; mode: AuthMode; model: string; permissionMode: PermissionMode };
+  | { status: "signedOut" }
+  | { status: "authed"; model: string; permissionMode: PermissionMode };
 
 interface Persisted {
   events?: TimelineEvent[];
@@ -104,37 +111,19 @@ export function App() {
     const off = onMessage((m) => {
       switch (m.type) {
         case "auth": {
-          if (m.authed && m.mode && m.model) {
-            setAuth({
-              status: "authed",
-              mode: m.mode,
-              model: m.model,
-              permissionMode: m.permissionMode ?? "default"
-            });
-            send({ type: "requestModels" });
-            send({ type: "requestSkills" });
-          } else {
-            setAuth({
-              status: "unauthed",
-              mode: m.mode ?? null,
-              error: null,
-              validating: false
-            });
+          if (!m.authed) {
+            setAuth({ status: "signedOut" });
+            break;
           }
+          setAuth({
+            status: "authed",
+            model: m.model ?? "default",
+            permissionMode: m.permissionMode ?? "default"
+          });
+          send({ type: "requestModels" });
+          send({ type: "requestSkills" });
           break;
         }
-        case "authValidating":
-          setAuth((a) =>
-            a.status === "unauthed" ? { ...a, validating: true, error: null } : a
-          );
-          break;
-        case "authResult":
-          setAuth((a) =>
-            a.status === "unauthed"
-              ? { ...a, validating: false, error: m.ok ? null : m.error ?? "Failed." }
-              : a
-          );
-          break;
         case "hello":
           setStreaming("");
           setError(null);
@@ -247,10 +236,10 @@ export function App() {
     );
   }
 
-  if (auth.status === "unauthed") {
+  if (auth.status === "signedOut") {
     return (
       <div className="flex flex-col h-screen relative bg-s0">
-        <AuthGate validating={auth.validating} error={auth.error} />
+        <WelcomeScreen />
       </div>
     );
   }
@@ -258,7 +247,6 @@ export function App() {
   return (
     <div className="flex flex-col h-screen relative bg-s0">
       <ChatScreen
-        authMode={auth.mode}
         model={auth.model}
         permissionMode={auth.permissionMode}
         events={events}

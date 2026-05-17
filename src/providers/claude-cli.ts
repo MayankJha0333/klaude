@@ -23,6 +23,10 @@ export interface ClaudeCliOpts {
   conventions?: ConventionsFile | null;
   getResumeSessionId?: () => string | undefined;
   setResumeSessionId?: (id: string) => void;
+  /** Anthropic auth token (OAuth `sk-ant-oat...` or API `sk-ant-api...`)
+   *  injected as `ANTHROPIC_API_KEY` when spawning the CLI. Optional —
+   *  if absent the CLI falls back to its own `~/.claude/` credentials. */
+  token?: string;
 }
 
 export class ClaudeCliProvider implements ChatProvider {
@@ -47,9 +51,16 @@ export class ClaudeCliProvider implements ChatProvider {
 
     const args = buildArgs(userText, req.model, this.opts);
 
+    // Inject the user's token as ANTHROPIC_API_KEY when present. The CLI
+    // prefers env-supplied keys over its own on-disk credentials, so this
+    // is the cleanest way to make Iridescent's stored token authoritative
+    // without touching ~/.claude/ files.
+    const childEnv = this.opts.token
+      ? { ...process.env, ANTHROPIC_API_KEY: this.opts.token }
+      : process.env;
     const child = spawn(this.opts.binary, args, {
       cwd: this.opts.cwd,
-      env: process.env,
+      env: childEnv,
       stdio: ["ignore", "pipe", "pipe"]
     });
     this.child = child;
