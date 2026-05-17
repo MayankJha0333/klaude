@@ -279,7 +279,7 @@ export function ChatScreen({
       <div
         ref={logRef}
         onScroll={onScroll}
-        className="flex-1 overflow-y-auto px-4 pt-4 pb-4 flex flex-col gap-2.5 scroll-smooth [&>*]:flex-shrink-0 relative"
+        className="flex-1 overflow-y-auto px-4 pt-4 pb-6 flex flex-col gap-2.5 scroll-smooth [&>*]:flex-shrink-0 relative"
       >
         <AnimatePresence mode="wait" initial={false}>
           {grouped.groups.length === 0 && !streaming && (
@@ -439,7 +439,7 @@ export function ChatScreen({
       </AnimatePresence>
 
       <div
-        className="px-3 pb-3 pt-1 flex flex-col gap-2 bg-s0 border-t border-b1 relative"
+        className="px-3 pb-3 pt-3 flex flex-col gap-2.5 bg-s0 border-t border-b1 relative"
         style={{
           boxShadow: "0 -8px 24px -16px rgba(0,0,0,0.55)"
         }}

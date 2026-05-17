@@ -145,7 +145,7 @@ export function UserMessage({
 
   return (
     <motion.div
-      className="msg msg-user flex items-start gap-2.5 group"
+      className="msg msg-user flex items-start gap-2.5 group mt-4 first:mt-0"
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
@@ -154,9 +154,12 @@ export function UserMessage({
         Y
       </div>
       <div
-        className={`md flex-1 min-w-0 leading-[1.65] break-words text-[13.5px] py-1 pr-20 pl-4 text-t1 relative space-y-1.5 select-text [&>p]:my-0 [&>p+p]:mt-2${
+        className={`md flex-1 min-w-0 leading-[1.65] break-words text-[13.5px] py-2 pr-20 pl-4 text-t1 relative space-y-1.5 select-text [&>p]:my-0 [&>p+p]:mt-2${
           editable
-            ? " cursor-text rounded-lg -ml-2.5 px-2.5 transition-[background,box-shadow] duration-[140ms] hover:bg-accent-soft hover:shadow-[inset_0_0_0_1px_var(--accent-mid)] focus-visible:outline-none focus-visible:bg-accent-soft focus-visible:shadow-[inset_0_0_0_1px_var(--accent-glow)]"
+            ? // Always-on frame (subtle border + faint bg) so the user can see
+              // the message is interactive without needing to hover. Hover
+              // strengthens both for affordance feedback.
+              " cursor-text rounded-lg -ml-2.5 px-2.5 transition-[background,box-shadow] duration-[140ms] bg-s2/30 shadow-[inset_0_0_0_1px_var(--b1)] hover:bg-accent-soft hover:shadow-[inset_0_0_0_1px_var(--accent-mid)] focus-visible:outline-none focus-visible:bg-accent-soft focus-visible:shadow-[inset_0_0_0_1px_var(--accent-glow)]"
             : ""
         }`}
         onClick={handleBubbleClick}
@@ -172,7 +175,7 @@ export function UserMessage({
             <MsgBadge key={i} label={p.label} lang={p.lang} code={p.code} />
           )
         )}
-        <div className="absolute top-1.5 right-0 inline-flex items-center gap-1 opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100 focus-within:opacity-100">
+        <div className="absolute top-1.5 right-1 inline-flex items-center gap-1 opacity-60 transition-opacity duration-[140ms] group-hover:opacity-100 focus-within:opacity-100">
           <button
             type="button"
             className="inline-flex items-center gap-1 bg-transparent border border-transparent text-t3 px-2 py-[3px] rounded-md cursor-pointer text-[11px] font-semibold font-[inherit] transition-colors duration-[140ms] hover:text-t1 hover:border-b2 hover:bg-s3"

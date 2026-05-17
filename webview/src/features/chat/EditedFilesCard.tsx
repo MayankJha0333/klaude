@@ -266,23 +266,20 @@ function FileRow({
 
   return (
     <div
-      onClick={(e) => {
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        onOpenDiff(rect);
-      }}
+      onClick={onOpenInEditor}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          onOpenDiff(rect);
+          onOpenInEditor();
         }
       }}
       className={[
         "group flex items-center gap-2 px-2.5 py-1.5 cursor-pointer transition-[background,opacity] duration-[140ms] hover:bg-[var(--s2)]/60 focus:outline-none focus-visible:bg-[var(--s2)]",
         isReverted ? "opacity-55 hover:opacity-80" : ""
       ].join(" ")}
+      title={`Open ${entry.path}`}
     >
       <FileBadge path={entry.path} size={16} />
       <span
@@ -325,18 +322,6 @@ function FileRow({
           )}
         </span>
       )}
-      <button
-        type="button"
-        className="w-5 h-5 rounded inline-flex items-center justify-center text-t4 hover:text-t1 hover:bg-[var(--s3)] flex-shrink-0 transition-colors border-0 bg-transparent cursor-pointer font-[inherit] opacity-0 group-hover:opacity-100"
-        aria-label="Open in editor"
-        title="Open in editor"
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenInEditor();
-        }}
-      >
-        <Icon name="arrow" size={10} />
-      </button>
     </div>
   );
 }

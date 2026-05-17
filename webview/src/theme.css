@@ -10,7 +10,13 @@
    Tailwind utilities while the design tokens stay in one place.
    ═══════════════════════════════════════════════════════════════ */
 
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+/* Geist for body/UI — Vercel's variable sans, purpose-built for technical
+ * interfaces (used by Linear, Vercel dashboard, Resend, modern dev tools).
+ * Sharp at small sizes, neutral and modern, with proper tabular numerals.
+ *
+ * Geist Mono for code — companion font with the same design DNA, cleaner
+ * than JetBrains Mono for terminal-style content + great ligatures. */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 @theme {
@@ -95,8 +101,10 @@
 
   --radius: 10px;
   --radius-sm: 8px;
-  --font-sans: "Outfit", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+  --font-sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", "SF Mono", "Fira Code",
+    ui-monospace, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -110,6 +118,14 @@ html, body, #root {
   color: var(--t1);
   background: var(--s0);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Geist OpenType features — calt + liga keep contextual rendering on
+   *   (helps with code-adjacent prose like `=>` and `!=`), ss01 enables
+   *   the slashed-zero stylistic set, tnum keeps numerals tabular so
+   *   inline counters / file:line refs align cleanly. */
+  font-feature-settings: "ss01" 1, "calt" 1, "liga" 1, "tnum" 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .app {
@@ -655,49 +671,182 @@ html, body, #root {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Markdown
+   Markdown — chat prose presentation
+   Tuned for readability at 13.5px on dark surfaces. Geist provides
+   the letterforms; this stylesheet controls rhythm, contrast, and
+   heading hierarchy. Spacing is em-scaled so every block breathes
+   in proportion to the font size.
    ═══════════════════════════════════════════════════════════════ */
 
-.md p, .md-p { margin: 0 0 10px; line-height: 1.6; color: var(--t2); }
-.md > :last-child { margin-bottom: 0; }
-.md-h {
-  margin: 14px 0 6px;
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--t1);
-  letter-spacing: -0.2px;
+.md {
+  color: var(--t2);
+  font-size: 13.5px;
+  line-height: 1.7;
+  letter-spacing: -0.003em;
+  font-feature-settings: "ss01" 1, "calt" 1, "liga" 1, "tnum" 1;
 }
-.md-ul, .md-ol { margin: 0 0 10px; padding-left: 22px; }
-.md-ul li, .md-ol li { margin-bottom: 3px; color: var(--t2); }
+.md p, .md-p {
+  margin: 0 0 0.85em;
+  color: var(--t2);
+  /* Better word-breaking in long technical strings (URLs, paths). */
+  overflow-wrap: anywhere;
+}
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+
+/* Heading hierarchy — h1/h2 collapse to h3 in the renderer, so most
+   chat headings land here. Stronger size jumps than the default browser
+   stylesheet so visual scanning works at a glance. */
+.md-h {
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--t1);
+  letter-spacing: -0.02em;
+  margin: 1.4em 0 0.5em;
+}
+.md > .md-h:first-child { margin-top: 0; }
+h3.md-h { font-size: 1.28em; font-weight: 700; }
+h4.md-h { font-size: 1.12em; }
+h5.md-h { font-size: 1em; }
+h6.md-h {
+  font-size: 0.86em;
+  color: var(--t3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+/* Lists — comfortable indent, dim markers so the actual content reads
+   first. Tighter line-height inside list items so multi-line bullets
+   feel like one chunk.
+   IMPORTANT: Tailwind's preflight strips `list-style` from every ul/ol,
+   so we re-enable it here. Without these two lines the ::marker rules
+   below have nothing to attach to and bullets disappear. */
+.md-ul {
+  list-style: disc outside;
+  margin: 0 0 0.9em;
+  padding-left: 1.5em;
+}
+.md-ol {
+  list-style: decimal outside;
+  margin: 0 0 0.9em;
+  padding-left: 1.5em;
+}
+.md-ul li, .md-ol li {
+  margin: 0.22em 0;
+  color: var(--t2);
+  padding-left: 0.2em;
+  line-height: 1.6;
+  display: list-item;
+}
+.md-ul li::marker { color: var(--t4); font-size: 0.95em; }
+.md-ol li::marker {
+  color: var(--t4);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+/* Nested lists swap marker style (disc → circle → square) and tighten. */
+.md-ul ul, .md-ol ul {
+  list-style: circle outside;
+  margin: 0.2em 0 0.4em;
+}
+.md-ul ol, .md-ol ol {
+  list-style: decimal outside;
+  margin: 0.2em 0 0.4em;
+}
+.md-ul ul ul { list-style: square outside; }
+
+/* Inline code — neutral chip, mono font, slightly punched-out fg.
+   No border or background border-radius noise at small sizes. */
 .md-ic {
   font-family: var(--font-mono);
   background: var(--s2);
-  border: 1px solid var(--b1);
-  padding: 1px 6px;
+  padding: 0.1em 0.4em;
   border-radius: 4px;
-  font-size: 0.88em;
+  font-size: 0.86em;
   color: var(--accent-glow);
+  font-feature-settings: "calt" 0;
+  font-variant-ligatures: none;
+  word-break: keep-all;
 }
+
+/* Fenced code block — separate surface (--s0 is darker than the
+   surrounding chat surface --s1 so the block "punches in"). Geist Mono
+   for code; line-height 1.65 reads well at 12.5px with ligatures on. */
 .md-code {
-  background: var(--s1);
+  background: var(--s0);
   border: 1px solid var(--b1);
   border-radius: 8px;
   padding: 12px 14px;
-  margin: 8px 0 12px;
+  margin: 0.6em 0 0.9em;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--t1);
+  font-feature-settings: "calt" 1, "ss01" 1;
 }
-.md-code code { background: transparent; padding: 0; color: var(--t1); border: none; }
-.md-p a, .msg-body a {
+.md-code code {
+  background: transparent;
+  padding: 0;
+  color: var(--t1);
+  border: none;
+}
+
+/* Links — accent color with a hairline underline that thickens on
+   hover. Matches Linear / Cursor link presentation. */
+.md a, .md-p a, .msg-body a {
   color: var(--accent-glow);
-  text-decoration: none;
-  border-bottom: 1px dashed color-mix(in srgb, var(--accent-glow) 50%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-glow) 40%, transparent);
+  text-underline-offset: 2.5px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 120ms ease, text-decoration-thickness 120ms ease;
 }
-.md-p a:hover { border-bottom-style: solid; }
-.md strong { font-weight: 700; color: var(--t1); }
-.md em { font-style: italic; color: var(--t3); }
+.md a:hover, .md-p a:hover {
+  text-decoration-color: var(--accent-glow);
+  text-decoration-thickness: 1.5px;
+}
+
+.md strong { font-weight: 700; color: var(--t1); letter-spacing: -0.005em; }
+.md em { font-style: italic; color: var(--t2); }
+
+/* Strikethrough — for "removed/deprecated" callouts in agent prose. */
+.md del, .md s {
+  color: var(--t4);
+  text-decoration-color: var(--t4);
+}
+
+/* Block quotes — subtle accent rail, italic for tonal distinction. */
+.md blockquote {
+  margin: 0.7em 0 0.9em;
+  padding: 0.15em 0 0.15em 1em;
+  border-left: 2px solid var(--accent-mid);
+  color: var(--t3);
+  font-style: italic;
+}
+.md blockquote p:last-child { margin-bottom: 0; }
+
+/* Horizontal rule — barely-there divider matching --b1. */
+.md hr {
+  border: 0;
+  height: 1px;
+  background: var(--b1);
+  margin: 1.2em 0;
+}
+
+/* Keyboard / kbd shortcuts — same chip family as inline code but flatter. */
+.md kbd {
+  font-family: var(--font-mono);
+  background: var(--s2);
+  border: 1px solid var(--b2);
+  border-bottom-width: 2px;
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  font-size: 0.82em;
+  color: var(--t2);
+  box-shadow: 0 1px 0 var(--b1);
+}
 
 .md-code-wrap {
   margin: 10px 0 14px;
