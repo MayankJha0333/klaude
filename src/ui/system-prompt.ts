@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// System prompt for Iridescent's agentic loop.
+// System prompt for Klaude's agentic loop.
 //
 // Composes layers:
 //   1. Base prompt (workspace orientation, tools, boundaries) — always
@@ -64,7 +64,7 @@ function basePrompt(ctx: SystemPromptContext): string {
   const name = ctx.workspaceName ?? basename(root);
   const active = ctx.activeFile ? `\n- Active editor: ${ctx.activeFile}` : "";
 
-  return `You are Iridescent, an agentic coding assistant running inside the user's VS Code workspace.
+  return `You are Klaude, an agentic coding assistant running inside the user's VS Code workspace.
 
 # Workspace
 

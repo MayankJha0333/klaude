@@ -28,7 +28,7 @@ import {
 import { aggregateClaudeCodeUsage } from "../services/claude-code-usage.js";
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
-  public static readonly viewId = "iridescent.chat";
+  public static readonly viewId = "klaude.chat";
 
   private view?: vscode.WebviewView;
   private session!: Session;
@@ -57,7 +57,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    *  or ~/.claude/.credentials.json elsewhere)". When this is true we treat
    *  the user as authed even if SecretStorage holds no token — the bundled
    *  CLI will pick up its own creds on each spawn. */
-  private static readonly CLAUDE_CREDS_READY_KEY = "iridescent.claudeCredsReady.v1";
+  private static readonly CLAUDE_CREDS_READY_KEY = "klaude.claudeCredsReady.v1";
 
   constructor(private readonly ctx: vscode.ExtensionContext) {
     this.history = new HistoryService(ctx);
@@ -288,7 +288,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    * model / permission-mode so the webview can hydrate ChatScreen state.
    */
   async broadcastAuthState() {
-    const cfg = vscode.workspace.getConfiguration("iridescent");
+    const cfg = vscode.workspace.getConfiguration("klaude");
     const model = cfg.get<string>("model", "claude-sonnet-4-6");
     const permissionMode = cfg.get<PermissionMode>("permissionMode", "default");
     const token = await getToken(this.ctx);
@@ -310,7 +310,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Sign out. Iridescent owns auth state entirely (token in SecretStorage),
+   * Sign out. Klaude owns auth state entirely (token in SecretStorage),
    * so logout is a single durable operation: confirm → cancel any in-flight
    * stream → delete the secret → flip the webview to the welcome screen.
    * No CLI invocation, no `~/.claude/` file manipulation. The user can sign
@@ -346,7 +346,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
     this.post({ type: "setupProgress", stage: "launching" });
 
-    const term = vscode.window.createTerminal({ name: "Iridescent Sign-in" });
+    const term = vscode.window.createTerminal({ name: "Klaude Sign-in" });
     this.setupTerminal = term;
     term.show(true);
     // Quote the binary path — node_modules paths on macOS often contain
@@ -409,7 +409,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   /**
    * Run a shell command in a fresh, integrated terminal.
    *
-   * IMPORTANT: we always dispose any existing "Iridescent Setup" terminal
+   * IMPORTANT: we always dispose any existing "Klaude Setup" terminal
    * before creating a new one. Re-using a terminal that previously hosted
    * `claude` (or any other interactive command) would cause `sendText` to
    * type the new command **as input into the still-running process**
@@ -423,10 +423,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    */
   private runTerminalCommand(command: string): void {
     const existing = vscode.window.terminals.find(
-      (t) => t.name === "Iridescent Setup"
+      (t) => t.name === "Klaude Setup"
     );
     existing?.dispose();
-    const term = vscode.window.createTerminal({ name: "Iridescent Setup" });
+    const term = vscode.window.createTerminal({ name: "Klaude Setup" });
     term.show(true);
     setTimeout(() => {
       term.sendText(command, true);
@@ -515,7 +515,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    * Strips stray slash prefixes and other formatting artifacts.
    */
   /**
-   * Right-click → "Iridescent: Comment on selection". Anchors a plan_comment
+   * Right-click → "Klaude: Comment on selection". Anchors a plan_comment
    * to the active editor's current selection on the latest plan revision.
    * The comment carries `quote` = the selected text so the existing
    * highlight + jump-to-passage flow lights up in the chat panel.
@@ -523,12 +523,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   commentOnEditorSelection() {
     const ed = vscode.window.activeTextEditor;
     if (!ed) {
-      vscode.window.showInformationMessage("Iridescent: open a file first.");
+      vscode.window.showInformationMessage("Klaude: open a file first.");
       return;
     }
     const sel = ed.selection;
     if (sel.isEmpty) {
-      vscode.window.showInformationMessage("Iridescent: select some code first.");
+      vscode.window.showInformationMessage("Klaude: select some code first.");
       return;
     }
     const latest = [...this.session.timeline]
@@ -536,7 +536,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       .find((e) => e.kind === "plan_revision");
     if (!latest) {
       vscode.window.showInformationMessage(
-        "Iridescent: no active plan to comment on. Run a /plan turn first."
+        "Klaude: no active plan to comment on. Run a /plan turn first."
       );
       return;
     }
@@ -557,7 +557,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   sendSelectionToChat() {
     const ed = vscode.window.activeTextEditor;
     if (!ed) {
-      vscode.window.showInformationMessage("Iridescent: open a file first.");
+      vscode.window.showInformationMessage("Klaude: open a file first.");
       return;
     }
     const sel = ed.selection;
@@ -565,7 +565,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     const raw = ed.document.getText(range);
     const cleaned = cleanSelection(raw);
     if (!cleaned) {
-      vscode.window.showInformationMessage("Iridescent: selection is empty.");
+      vscode.window.showInformationMessage("Klaude: selection is empty.");
       return;
     }
     this.reveal();
@@ -643,7 +643,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "setModel":
         if (typeof msg.model === "string") {
           await vscode.workspace
-            .getConfiguration("iridescent")
+            .getConfiguration("klaude")
             .update("model", msg.model, vscode.ConfigurationTarget.Global);
           await this.broadcastAuthState();
         }
@@ -651,7 +651,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       case "setPermissionMode":
         if (typeof msg.mode === "string") {
           await vscode.workspace
-            .getConfiguration("iridescent")
+            .getConfiguration("klaude")
             .update("permissionMode", msg.mode, vscode.ConfigurationTarget.Global);
           await this.broadcastAuthState();
         }
@@ -855,7 +855,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "dismissConventionsBanner":
         await this.ctx.workspaceState.update(
-          "iridescent.conventionsBannerDismissed.v1",
+          "klaude.conventionsBannerDismissed.v1",
           true
         );
         break;
@@ -865,17 +865,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         }
         break;
       case "generateConventions":
-        await vscode.commands.executeCommand("iridescent.generateConventions");
+        await vscode.commands.executeCommand("klaude.generateConventions");
         break;
       case "dismissSkillSuggestion":
         if (typeof msg.skillId === "string") {
           const list = this.ctx.workspaceState.get<string[]>(
-            "iridescent.skillSuggestionDismissed.v1",
+            "klaude.skillSuggestionDismissed.v1",
             []
           );
           if (!list.includes(msg.skillId)) {
             await this.ctx.workspaceState.update(
-              "iridescent.skillSuggestionDismissed.v1",
+              "klaude.skillSuggestionDismissed.v1",
               [...list, msg.skillId]
             );
           }
@@ -905,7 +905,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     workspaceRoot: string
   ): Promise<void> {
     const dismissed = this.ctx.workspaceState.get<string[]>(
-      "iridescent.skillSuggestionDismissed.v1",
+      "klaude.skillSuggestionDismissed.v1",
       []
     );
     const suggestion = await getSkillSuggestion(taskType, workspaceRoot);
@@ -925,16 +925,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   private maybeShowConventionsBanner(c: ConventionsFile | null): void {
     if (c) return;
     const dismissed = this.ctx.workspaceState.get<boolean>(
-      "iridescent.conventionsBannerDismissed.v1",
+      "klaude.conventionsBannerDismissed.v1",
       false
     );
     if (dismissed) return;
     const turnCount = this.ctx.workspaceState.get<number>(
-      "iridescent.turnCount.v1",
+      "klaude.turnCount.v1",
       0
     );
     const next = turnCount + 1;
-    this.ctx.workspaceState.update("iridescent.turnCount.v1", next);
+    this.ctx.workspaceState.update("klaude.turnCount.v1", next);
     if (next >= 3) {
       this.post({ type: "conventionsBanner" });
     }
@@ -1278,11 +1278,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const cfg = vscode.workspace.getConfiguration("iridescent");
+    const cfg = vscode.workspace.getConfiguration("klaude");
     const currentMode = cfg.get<PermissionMode>("permissionMode", "default");
 
     const choice = await vscode.window.showInformationMessage(
-      "Iridescent has a plan ready. Allow it to start implementing?",
+      "Klaude has a plan ready. Allow it to start implementing?",
       {
         modal: true,
         detail:
@@ -1534,7 +1534,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     this.post({ type: "models", models: availableModels() });
   }
 
-  private static readonly DISABLED_SKILLS_KEY = "iridescent.disabledSkills.v1";
+  private static readonly DISABLED_SKILLS_KEY = "klaude.disabledSkills.v1";
 
   private async broadcastSkills() {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -1697,7 +1697,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         delete meta.proceeded;
         delete meta.prePermissionMode;
         if (prevMode) {
-          const cfg = vscode.workspace.getConfiguration("iridescent");
+          const cfg = vscode.workspace.getConfiguration("klaude");
           const currentMode = cfg.get<PermissionMode>("permissionMode", "default");
           if (currentMode !== prevMode) {
             await cfg.update(
@@ -1730,7 +1730,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private async handlePrompt(text: string) {
     if (!text.trim()) return;
-    const cfg = vscode.workspace.getConfiguration("iridescent");
+    const cfg = vscode.workspace.getConfiguration("klaude");
     const model = cfg.get<string>("model", "claude-sonnet-4-6");
     const maxTokens = cfg.get<number>("maxTokens", 4096);
     const permMode = cfg.get<PermissionMode>("permissionMode", "default");
@@ -1759,7 +1759,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceRoot) {
-      this.post({ type: "error", message: "Open a folder to use Iridescent." });
+      this.post({ type: "error", message: "Open a folder to use Klaude." });
       return;
     }
 
@@ -1881,7 +1881,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${styleUri}">
-<title>Iridescent</title>
+<title>Klaude</title>
 </head>
 <body>
 <div id="root"></div>
@@ -1987,7 +1987,7 @@ async function availableSkills(
   disabled: Set<string>
 ): Promise<SkillInfo[]> {
   // Capabilities surfaced by Claude Code (CLI). Marked `external` because
-  // they execute inside the CLI agent — Iridescent doesn't own them.
+  // they execute inside the CLI agent — Klaude doesn't own them.
   const claudeCode: SkillInfo[] = [
     { id: "Read",       name: "Read",       category: "tool",  description: "Read files in the workspace", enabled: true, toggleable: false, external: true },
     { id: "Write",      name: "Write",      category: "tool",  description: "Create and edit files",       enabled: true, toggleable: false, external: true },

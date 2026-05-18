@@ -41,28 +41,28 @@ describe("getTaskTypePrompt", () => {
   });
 });
 
-describe("IRIDESCENT_PROMPTS_DIR override", () => {
+describe("KLAUDE_PROMPTS_DIR override", () => {
   let tmpDir: string;
-  const original = process.env.IRIDESCENT_PROMPTS_DIR;
+  const original = process.env.KLAUDE_PROMPTS_DIR;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(path.join(os.tmpdir(), "iridescent-prompts-"));
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "klaude-prompts-"));
   });
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
-    if (original === undefined) delete process.env.IRIDESCENT_PROMPTS_DIR;
-    else process.env.IRIDESCENT_PROMPTS_DIR = original;
+    if (original === undefined) delete process.env.KLAUDE_PROMPTS_DIR;
+    else process.env.KLAUDE_PROMPTS_DIR = original;
   });
 
   it("reads mode prompt from disk when env var is set", () => {
     fs.writeFileSync(path.join(tmpDir, "auto-mode.md"), "OVERRIDE_AUTO");
-    process.env.IRIDESCENT_PROMPTS_DIR = tmpDir;
+    process.env.KLAUDE_PROMPTS_DIR = tmpDir;
     expect(getModePrompt("auto")).toBe("OVERRIDE_AUTO");
   });
 
   it("falls back to bundled when override file is missing", () => {
-    process.env.IRIDESCENT_PROMPTS_DIR = tmpDir;
+    process.env.KLAUDE_PROMPTS_DIR = tmpDir;
     const md = getModePrompt("plan");
     expect(md.length).toBeGreaterThan(0);
     expect(md).not.toBe("");
@@ -71,7 +71,7 @@ describe("IRIDESCENT_PROMPTS_DIR override", () => {
   it("reads task-type prompt from disk when env var is set", () => {
     fs.mkdirSync(path.join(tmpDir, "task-types"));
     fs.writeFileSync(path.join(tmpDir, "task-types", "backend.md"), "OVERRIDE_BACKEND");
-    process.env.IRIDESCENT_PROMPTS_DIR = tmpDir;
+    process.env.KLAUDE_PROMPTS_DIR = tmpDir;
     expect(getTaskTypePrompt("backend")).toBe("OVERRIDE_BACKEND");
   });
 });

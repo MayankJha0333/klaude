@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 // the same way it works at extension-bundle time.
 function mdAsText() {
   return {
-    name: "iridescent:md-as-text",
+    name: "klaude:md-as-text",
     enforce: "pre" as const,
     transform(_code: string, id: string) {
       if (!id.endsWith(".md")) return null;

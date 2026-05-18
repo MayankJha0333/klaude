@@ -53,7 +53,7 @@ export class ClaudeCliProvider implements ChatProvider {
 
     // Inject the user's token as ANTHROPIC_API_KEY when present. The CLI
     // prefers env-supplied keys over its own on-disk credentials, so this
-    // is the cleanest way to make Iridescent's stored token authoritative
+    // is the cleanest way to make Klaude's stored token authoritative
     // without touching ~/.claude/ files.
     const childEnv = this.opts.token
       ? { ...process.env, ANTHROPIC_API_KEY: this.opts.token }
@@ -174,7 +174,7 @@ export function buildArgs(
     const list = disabled.map((id) => `\`${id}\``).join(", ");
     args.push(
       "--append-system-prompt",
-      `The user has disabled the following Claude Code skills via Iridescent's Skills picker: ${list}. Do not invoke any of them, even if a task would benefit. If you would normally use a disabled skill, tell the user which skill is disabled and ask them to re-enable it from the Skills picker before retrying. All other skills remain available.`
+      `The user has disabled the following Claude Code skills via Klaude's Skills picker: ${list}. Do not invoke any of them, even if a task would benefit. If you would normally use a disabled skill, tell the user which skill is disabled and ask them to re-enable it from the Skills picker before retrying. All other skills remain available.`
     );
   }
 

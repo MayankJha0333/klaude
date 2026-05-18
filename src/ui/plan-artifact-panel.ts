@@ -5,7 +5,7 @@ import { PlanRevisionMeta } from "../core/types.js";
  * Opens a plan revision as a real VS Code editor tab — a `WebviewPanel`
  * pinned to the user's active view column. Reuses the same compiled
  * webview bundle as the chat panel; the bundle's entry script reads
- * `window.IRIDESCENT_MODE` and `window.IRIDESCENT_REVISION_ID` to decide
+ * `window.KLAUDE_MODE` and `window.KLAUDE_REVISION_ID` to decide
  * whether to render the chat shell or the artifact shell.
  *
  * The host is the single source of truth for state. All RPCs from any
@@ -38,7 +38,7 @@ export class PlanArtifactManager {
 
     const title = deriveTitle(revisionMeta);
     const panel = vscode.window.createWebviewPanel(
-      "iridescentPlanArtifact",
+      "klaudePlanArtifact",
       title,
       vscode.ViewColumn.Active,
       {
@@ -113,10 +113,10 @@ export class PlanArtifactManager {
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${styleUri}">
-<title>Iridescent — Plan</title>
+<title>Klaude — Plan</title>
 <script nonce="${nonce}">
-  window.IRIDESCENT_MODE = "artifact";
-  window.IRIDESCENT_REVISION_ID = "${escaped}";
+  window.KLAUDE_MODE = "artifact";
+  window.KLAUDE_REVISION_ID = "${escaped}";
 </script>
 </head>
 <body>

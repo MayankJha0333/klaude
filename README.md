@@ -1,8 +1,8 @@
-# Iridescent
+# Klaude
 
 Agentic AI coding assistant for VS Code. Inspired by Claude Code. Side-panel chat, inline diff previews, multi-file edits, terminal execution, permission modes. BYOK (Anthropic today; OpenAI/Ollama adapters pluggable).
 
-Design doc: `~/.claude/plans/design-and-architect-a-iridescent-planet.md`.
+Design doc: `~/.claude/plans/design-and-architect-a-klaude-planet.md`.
 
 ## Status
 
@@ -13,45 +13,45 @@ Not yet: embeddings indexer, tree-sitter symbol mentions, checkpoints timeline U
 ## Install (dev)
 
 ```bash
-cd iridescent
+cd klaude
 npm install
 (cd webview && npm install)
 npm run build
 ```
 
-Then in VS Code: **Run → Start Debugging** (or F5) with this folder open. An Extension Development Host launches with Iridescent active.
+Then in VS Code: **Run → Start Debugging** (or F5) with this folder open. An Extension Development Host launches with Klaude active.
 
 ## First run
 
-1. Command palette → **Iridescent: Set API Key** → pick `anthropic` → paste key.
+1. Command palette → **Klaude: Set API Key** → pick `anthropic` → paste key.
 2. Open any folder (workspace required).
-3. Click the Iridescent icon in the activity bar.
+3. Click the Klaude icon in the activity bar.
 4. Type a prompt, `Cmd/Ctrl+Enter` to send.
 
-Set model in settings (`iridescent.model`, default `claude-opus-4-7`).
+Set model in settings (`klaude.model`, default `claude-opus-4-7`).
 
 ## Permission modes
 
-Cycle with `Shift+Tab` (when chat focused) or `Iridescent: Cycle Permission Mode`.
+Cycle with `Shift+Tab` (when chat focused) or `Klaude: Cycle Permission Mode`.
 
 | Mode | Behavior |
 |---|---|
 | default | Every tool call prompts for approval. |
 | plan | Agent reasons only — no tool execution. |
-| auto | Allowlist: `fs_read` auto-approved; `bash` matching `iridescent.allowedBashPatterns` auto-approved; everything else prompts. |
+| auto | Allowlist: `fs_read` auto-approved; `bash` matching `klaude.allowedBashPatterns` auto-approved; everything else prompts. |
 
 Protected paths (`.git`, `.env*`, `.ssh`, shell rc) always prompt regardless of mode.
 
 ## Commands
 
-- `Iridescent: New Chat`
-- `Iridescent: Toggle Chat Panel` — `Cmd/Ctrl+Shift+I`
-- `Iridescent: Inline Edit` — `Cmd/Ctrl+I` (prompts for instruction, pre-fills selection)
-- `Iridescent: Explain Selection`
-- `Iridescent: Refactor Selection`
-- `Iridescent: Fix Bug`
-- `Iridescent: Set API Key`
-- `Iridescent: Cycle Permission Mode`
+- `Klaude: New Chat`
+- `Klaude: Toggle Chat Panel` — `Cmd/Ctrl+Shift+I`
+- `Klaude: Inline Edit` — `Cmd/Ctrl+I` (prompts for instruction, pre-fills selection)
+- `Klaude: Explain Selection`
+- `Klaude: Refactor Selection`
+- `Klaude: Fix Bug`
+- `Klaude: Set API Key`
+- `Klaude: Cycle Permission Mode`
 
 ## Architecture
 
@@ -77,7 +77,7 @@ npm test
 ## Package
 
 ```bash
-npm run package    # produces iridescent-0.1.0.vsix
+npm run package    # produces klaude-0.1.0.vsix
 ```
 
 ## License

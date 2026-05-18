@@ -4,7 +4,7 @@ import { TimelineEvent, PlanCommentMeta, PlanRevisionMeta, PlanTask } from "../c
 /**
  * Mirrors plan_comment quotes and the active plan step into VS Code editor
  * decorations. Re-applies on every relevant timeline change and on active-
- * editor switch — so the Iridescent chat panel and the editor stay in sync.
+ * editor switch — so the Klaude chat panel and the editor stay in sync.
  *
  * Two decoration types:
  *   - comment:  green underline + overview-ruler tick for any plan_comment

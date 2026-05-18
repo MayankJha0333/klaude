@@ -1,7 +1,7 @@
 // Loads bundled mode + task-type MD prompts. esbuild's text loader inlines the
 // MD content into dist/extension.js at build time so runtime cost is zero.
 //
-// In dev, set IRIDESCENT_PROMPTS_DIR to a path on disk and the loader will read
+// In dev, set KLAUDE_PROMPTS_DIR to a path on disk and the loader will read
 // from there instead — useful for iterating on prompts without rebuilding.
 
 import * as fs from "node:fs";
@@ -43,7 +43,7 @@ const BUNDLED_TASK: Record<Exclude<TaskType, "generic">, string> = {
 };
 
 function devOverride(rel: string): string | null {
-  const dir = process.env.IRIDESCENT_PROMPTS_DIR;
+  const dir = process.env.KLAUDE_PROMPTS_DIR;
   if (!dir) return null;
   try {
     return fs.readFileSync(path.join(dir, rel), "utf8");

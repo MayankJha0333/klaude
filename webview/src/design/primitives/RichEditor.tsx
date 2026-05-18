@@ -230,7 +230,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
           onPaste={handlePaste}
           role="textbox"
           aria-multiline="true"
-          aria-label="Message Iridescent"
+          aria-label="Message Klaude"
         />
       </div>
     );

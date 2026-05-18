@@ -63,7 +63,7 @@ export function Header({
           <Icon name="sparkle" size={12} />
         </motion.div>
         <span className="font-bold text-[13.5px] tracking-[-0.3px] text-t1 flex-shrink-0">
-          Iridescent
+          Klaude
         </span>
         <Chip tone="accent" title="Claude Code subscription">
           <span className="w-1.5 h-1.5 rounded-full bg-current" />

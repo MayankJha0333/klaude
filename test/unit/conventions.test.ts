@@ -30,7 +30,7 @@ describe("loadConventions", () => {
   let workspaceRoot: string;
 
   beforeEach(() => {
-    workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "iridescent-conv-"));
+    workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "klaude-conv-"));
     disposeConventionsWatchers();
   });
 

@@ -2,7 +2,7 @@
 // Webview entry. The same compiled bundle is loaded into both
 // the chat sidebar (WebviewView) and the plan artifact editor
 // tab (WebviewPanel). The extension host writes
-// `window.IRIDESCENT_MODE` into the panel's HTML at creation
+// `window.KLAUDE_MODE` into the panel's HTML at creation
 // time so we can mount the right shell here without bouncing a
 // "what mode am I in?" RPC round-trip first.
 // ─────────────────────────────────────────────────────────────
@@ -15,18 +15,18 @@ import "./theme.css";
 
 declare global {
   interface Window {
-    IRIDESCENT_MODE?: "chat" | "artifact";
-    IRIDESCENT_REVISION_ID?: string;
+    KLAUDE_MODE?: "chat" | "artifact";
+    KLAUDE_REVISION_ID?: string;
   }
 }
 
-const mode = window.IRIDESCENT_MODE ?? "chat";
+const mode = window.KLAUDE_MODE ?? "chat";
 const root = createRoot(document.getElementById("root")!);
 
 root.render(
   <StrictMode>
-    {mode === "artifact" && window.IRIDESCENT_REVISION_ID ? (
-      <ArtifactApp revisionId={window.IRIDESCENT_REVISION_ID} />
+    {mode === "artifact" && window.KLAUDE_REVISION_ID ? (
+      <ArtifactApp revisionId={window.KLAUDE_REVISION_ID} />
     ) : (
       <App />
     )}

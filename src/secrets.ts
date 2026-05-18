@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// Auth-token storage for Iridescent's subscription-only flow.
+// Auth-token storage for Klaude's subscription-only flow.
 //
 // Tokens we accept (both work with the bundled Claude Code CLI when
 // passed as ANTHROPIC_API_KEY):
@@ -8,13 +8,13 @@
 //
 // We never write to `~/.claude/` ourselves — instead we inject the
 // stored token into the CLI's environment when we spawn it. This keeps
-// auth fully owned by Iridescent (logout → secret deleted → CLI sees
+// auth fully owned by Klaude (logout → secret deleted → CLI sees
 // no key) and avoids touching files the CLI manages.
 // ─────────────────────────────────────────────────────────────
 
 import * as vscode from "vscode";
 
-const TOKEN_KEY = "iridescent.claudeToken.v1";
+const TOKEN_KEY = "klaude.claudeToken.v1";
 
 export async function getToken(
   ctx: vscode.ExtensionContext

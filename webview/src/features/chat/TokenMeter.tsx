@@ -95,7 +95,7 @@ const PLAN_PRESETS: Record<PlanKey, PlanPreset> = {
 
 const PLAN_ORDER: PlanKey[] = ["pro", "max5", "max20", "team", "api", "custom"];
 
-const SETTINGS_KEY = "iridescent.tokenMeter.v3";
+const SETTINGS_KEY = "klaude.tokenMeter.v3";
 
 interface MeterSettings {
   plan: PlanKey;

@@ -1,4 +1,4 @@
-// Iridescent: Generate CLAUDE.md
+// Klaude: Generate CLAUDE.md
 //
 // Scans the workspace for the basics (manifest files + top-level layout) and
 // uses the active panel to draft a CLAUDE.md tailored to the project. The
@@ -13,7 +13,7 @@ import { ChatPanelProvider } from "../ui/panel.js";
 export async function generateConventionsCommand(panel: ChatPanelProvider): Promise<void> {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspaceRoot) {
-    vscode.window.showWarningMessage("Iridescent: open a folder first.");
+    vscode.window.showWarningMessage("Klaude: open a folder first.");
     return;
   }
 
@@ -39,7 +39,7 @@ export async function generateConventionsCommand(panel: ChatPanelProvider): Prom
   const prompt = buildScaffoldingPrompt(workspaceRoot, summary);
 
   vscode.window.showInformationMessage(
-    "Iridescent: drafting CLAUDE.md… the chat panel is generating it. Save the result to CLAUDE.md when ready."
+    "Klaude: drafting CLAUDE.md… the chat panel is generating it. Save the result to CLAUDE.md when ready."
   );
   await panel.sendUserMessage(prompt);
 

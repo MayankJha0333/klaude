@@ -116,7 +116,7 @@ export function WelcomeScreen() {
       >
         <Orb size={68} />
         <h1 className="text-[24px] font-extrabold tracking-[-0.6px] m-0 mt-3 mb-1.5 text-t1">
-          Welcome to Iridescent
+          Welcome to Klaude
         </h1>
         <p className="text-[13px] text-t3 m-0 leading-[1.55] max-w-[320px]">
           Agentic coding for VS Code — powered by your Claude subscription.
@@ -190,7 +190,7 @@ export function WelcomeScreen() {
                   >
                     <p className="text-[11.5px] text-t3 m-0 mb-2 leading-[1.5]">
                       Complete the sign-in in the{" "}
-                      <span className="text-t1 font-semibold">Iridescent Sign-in</span>{" "}
+                      <span className="text-t1 font-semibold">Klaude Sign-in</span>{" "}
                       terminal at the bottom — open the URL it prints, then
                       paste the code back into the terminal. Click below once
                       it says you're signed in.
@@ -354,7 +354,7 @@ export function WelcomeScreen() {
       >
         Token is stored in VS Code's SecretStorage (OS keychain).
         <br />
-        Iridescent never writes to{" "}
+        Klaude never writes to{" "}
         <code className="font-mono text-t3">~/.claude/</code>.
       </motion.div>
     </motion.div>

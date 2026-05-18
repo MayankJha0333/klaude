@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 const PROJECT_FILE = "CLAUDE.md";
-const USER_FILE = path.join(os.homedir(), ".iridescent", "memory.md");
+const USER_FILE = path.join(os.homedir(), ".klaude", "memory.md");
 
 async function readIfExists(uri: vscode.Uri): Promise<string | null> {
   try {

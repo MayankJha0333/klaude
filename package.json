@@ -1,9 +1,9 @@
 {
-  "name": "iridescent",
-  "displayName": "Iridescent",
+  "name": "klaude",
+  "displayName": "Klaude",
   "description": "Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.",
   "version": "0.1.0",
-  "publisher": "iridescent",
+  "publisher": "klaude",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -20,61 +20,61 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "iridescent",
-          "title": "Iridescent",
+          "id": "klaude",
+          "title": "Klaude",
           "icon": "$(sparkle)"
         }
       ]
     },
     "views": {
-      "iridescent": [
+      "klaude": [
         {
           "type": "webview",
-          "id": "iridescent.chat",
+          "id": "klaude.chat",
           "name": "Chat",
-          "contextualTitle": "Iridescent"
+          "contextualTitle": "Klaude"
         }
       ]
     },
     "commands": [
       {
-        "command": "iridescent.newChat",
-        "title": "Iridescent: New Chat"
+        "command": "klaude.newChat",
+        "title": "Klaude: New Chat"
       },
       {
-        "command": "iridescent.toggleChat",
-        "title": "Iridescent: Toggle Chat Panel"
+        "command": "klaude.toggleChat",
+        "title": "Klaude: Toggle Chat Panel"
       },
       {
-        "command": "iridescent.cycleMode",
-        "title": "Iridescent: Cycle Permission Mode"
+        "command": "klaude.cycleMode",
+        "title": "Klaude: Cycle Permission Mode"
       },
       {
-        "command": "iridescent.sendSelection",
-        "title": "Iridescent: Send Selection to Chat"
+        "command": "klaude.sendSelection",
+        "title": "Klaude: Send Selection to Chat"
       },
       {
-        "command": "iridescent.commentOnSelection",
-        "title": "Iridescent: Comment on Selection"
+        "command": "klaude.commentOnSelection",
+        "title": "Klaude: Comment on Selection"
       },
       {
-        "command": "iridescent.generateConventions",
-        "title": "Iridescent: Generate CLAUDE.md"
+        "command": "klaude.generateConventions",
+        "title": "Klaude: Generate CLAUDE.md"
       }
     ],
     "keybindings": [
       {
-        "command": "iridescent.toggleChat",
+        "command": "klaude.toggleChat",
         "key": "ctrl+shift+i",
         "mac": "cmd+shift+i"
       },
       {
-        "command": "iridescent.cycleMode",
+        "command": "klaude.cycleMode",
         "key": "shift+tab",
-        "when": "iridescent.chatFocused"
+        "when": "klaude.chatFocused"
       },
       {
-        "command": "iridescent.sendSelection",
+        "command": "klaude.sendSelection",
         "key": "ctrl+l",
         "mac": "cmd+l",
         "when": "editorHasSelection"
@@ -83,21 +83,21 @@
     "menus": {
       "editor/context": [
         {
-          "command": "iridescent.commentOnSelection",
-          "group": "iridescent@1",
+          "command": "klaude.commentOnSelection",
+          "group": "klaude@1",
           "when": "editorHasSelection"
         }
       ]
     },
     "configuration": {
-      "title": "Iridescent",
+      "title": "Klaude",
       "properties": {
-        "iridescent.model": {
+        "klaude.model": {
           "type": "string",
           "default": "claude-sonnet-4-5",
           "description": "Model ID passed to 'claude -p --model'. Use a CLI alias (sonnet, opus, haiku, opusplan, default) or an explicit version (claude-sonnet-4-6, etc.)."
         },
-        "iridescent.permissionMode": {
+        "klaude.permissionMode": {
           "type": "string",
           "enum": [
             "default",
@@ -107,12 +107,12 @@
           "default": "default",
           "description": "Tool approval behavior. 'default' prompts before each action; 'plan' is read-only / no execution; 'auto' auto-approves the Claude CLI's standard read/search tools and bash commands matching allowedBashPatterns."
         },
-        "iridescent.maxTokens": {
+        "klaude.maxTokens": {
           "type": "number",
           "default": 4096,
           "description": "Max output tokens per assistant turn. Lower = fewer rate-limit hits on subscription tokens."
         },
-        "iridescent.allowedBashPatterns": {
+        "klaude.allowedBashPatterns": {
           "type": "array",
           "items": {
             "type": "string"

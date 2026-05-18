@@ -26,7 +26,7 @@ export function ConventionsBanner({ onHideForSession }: ConventionsBannerProps) 
       transition={{ duration: 0.18, ease: "easeOut" }}
     >
       <div className="flex-1">
-        <strong>Iridescent works better with project conventions.</strong>
+        <strong>Klaude works better with project conventions.</strong>
         <span>
           {" "}
           Generate a CLAUDE.md so the model knows your project's structure,

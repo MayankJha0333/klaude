@@ -21,7 +21,7 @@
 //     (Anthropic's published weekly caps split out Sonnet usage; matching
 //     that lets the chip surface whichever cap will hit first.)
 //
-//   • Today — cumulative since local midnight (Iridescent's own window;
+//   • Today — cumulative since local midnight (Klaude's own window;
 //     handy for users who want a daily rhythm independent of Anthropic's
 //     billing windows).
 //
@@ -56,7 +56,7 @@ export interface SessionWindow {
 export interface AggregatedUsage {
   /** Anthropic's 5-hour rolling window — matches Claude's "Current session". */
   session: SessionWindow;
-  /** Local-day bucket (midnight to midnight) — Iridescent's own window. */
+  /** Local-day bucket (midnight to midnight) — Klaude's own window. */
   today: UsageTotals;
   /** Local-week bucket from Monday midnight. */
   week: UsageTotals;
@@ -91,8 +91,8 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 /**
  * Convert a workspace absolute path to Claude Code's directory naming.
  * Claude Code encodes each project's cwd by replacing path separators with `-`:
- *   `/Users/apple/OpenSource/Devon/iridescent`
- *     → `-Users-apple-OpenSource-Devon-iridescent`
+ *   `/Users/apple/OpenSource/Devon/klaude`
+ *     → `-Users-apple-OpenSource-Devon-klaude`
  *
  * Windows paths convert backslashes to `-` and drop the `:` after the drive
  * letter to match the same scheme.

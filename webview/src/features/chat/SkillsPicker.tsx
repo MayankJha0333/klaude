@@ -105,7 +105,7 @@ export function SkillsPicker({ skills }: SkillsPickerProps) {
             <div className="skills-head">
               <span className="skills-title">Skills</span>
               <span className="skills-sub">
-                Tools and capabilities Iridescent can use this session.
+                Tools and capabilities Klaude can use this session.
               </span>
             </div>
 

@@ -273,7 +273,7 @@ async function downloadDir(
 // ── HTTP helpers ───────────────────────────────────────────
 
 const COMMON_HEADERS: Record<string, string> = {
-  "User-Agent": "Iridescent-VSCode",
+  "User-Agent": "Klaude-VSCode",
   Accept: "application/json"
 };
 
@@ -315,7 +315,7 @@ function getRaw(url: string): Promise<Buffer> {
     const fetchOnce = (u: string, redirectsLeft: number) => {
       const req = https.get(
         u,
-        { headers: { "User-Agent": "Iridescent-VSCode" } },
+        { headers: { "User-Agent": "Klaude-VSCode" } },
         (res) => {
           const status = res.statusCode ?? 0;
           if (status >= 300 && status < 400 && res.headers.location && redirectsLeft > 0) {

@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // Provider factory — subscription-only.
 //
-// Iridescent runs exclusively on the Claude Code subscription via
+// Klaude runs exclusively on the Claude Code subscription via
 // the bundled `claude` CLI; the previous API-key fork (direct calls
 // to the Anthropic Messages API + in-process tool execution) is
 // gone. This file is kept as the single entry point for any future
