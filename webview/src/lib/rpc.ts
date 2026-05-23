@@ -227,6 +227,7 @@ export type Outbound =
   | { type: "editAt"; turnId: string; text: string; revertFiles: boolean }
   | { type: "openExternal"; url: string }
   | { type: "openFile"; path: string; startLine?: number; endLine?: number }
+  | { type: "readAttachment"; id: string; path: string }
   | { type: "revertFile"; path: string }
   | { type: "refreshUsage" }
   | { type: "runTerminalCommand"; command: string }
@@ -330,6 +331,13 @@ export type Inbound =
       error?: string;
     }
   | { type: "fileSearchResults"; id: string; results: FileSearchResult[] }
+  | {
+      type: "attachmentData";
+      id: string;
+      path: string;
+      dataUrl?: string;
+      error?: string;
+    }
   | {
       type: "insertSelection";
       file: string;

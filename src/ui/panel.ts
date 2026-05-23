@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
+import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { Session } from "../core/session.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import { PermissionMode, StreamDelta, PlanRevisionMeta } from "../core/types.js";
@@ -608,6 +610,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             typeof msg.startLine === "number" ? msg.startLine : 0,
             typeof msg.endLine === "number" ? msg.endLine : 0
           );
+        }
+        break;
+      case "readAttachment":
+        if (typeof msg.id === "string" && typeof msg.path === "string") {
+          await this.handleReadAttachment(msg.id, msg.path);
         }
         break;
       case "revertFile":
@@ -1669,6 +1676,46 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     this.post({ type: "fileSearchResults", id, results });
   }
 
+  /**
+   * Read an attachment file from disk and ship it back to the webview as a
+   * data URL. Used by UserMessage to preview the same image the user attached
+   * earlier — the wire format stores only a relative path so we hydrate it
+   * on demand. Path is sandboxed to the workspace root to refuse `../`
+   * traversal attempts.
+   */
+  private async handleReadAttachment(id: string, attachmentPath: string) {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+      this.post({
+        type: "attachmentData",
+        id,
+        path: attachmentPath,
+        error: "No workspace open."
+      });
+      return;
+    }
+    const abs = path.resolve(root, attachmentPath);
+    if (!abs.startsWith(root + path.sep) && abs !== root) {
+      this.post({
+        type: "attachmentData",
+        id,
+        path: attachmentPath,
+        error: "Attachment path is outside the workspace."
+      });
+      return;
+    }
+    try {
+      const buffer = await fs.promises.readFile(abs);
+      const ext = path.extname(abs).slice(1).toLowerCase();
+      const mime = MIME_BY_EXT[ext] ?? "application/octet-stream";
+      const dataUrl = `data:${mime};base64,${buffer.toString("base64")}`;
+      this.post({ type: "attachmentData", id, path: attachmentPath, dataUrl });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.post({ type: "attachmentData", id, path: attachmentPath, error: message });
+    }
+  }
+
   private async rewindTo(turnId: string) {
     if (!this.checkpoints) {
       this.post({ type: "error", message: "No checkpoint for this message." });
@@ -1730,6 +1777,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private async handlePrompt(text: string) {
     if (!text.trim()) return;
+    const workspaceForImages = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (workspaceForImages) {
+      text = await extractInlineImages(text, workspaceForImages);
+    }
     const cfg = vscode.workspace.getConfiguration("klaude");
     const model = cfg.get<string>("model", "claude-sonnet-4-6");
     const maxTokens = cfg.get<number>("maxTokens", 4096);
@@ -2025,4 +2076,93 @@ async function availableSkills(
   ];
 
   return [...claudeCode, ...custom, ...integrations];
+}
+
+/**
+ * Strip inline `![name](data:image/...;base64,...)` blobs out of a prompt by
+ * writing them to disk under `<workspace>/.klaude/attachments/` and replacing
+ * the markdown with a relative path reference. Without this, dropping a
+ * screenshot into the composer puts a multi-MB base64 string into the prompt
+ * text — and the CLI rejects the turn with "Prompt is too long".
+ *
+ * The rewritten message:
+ *   1. Stays small (a relative path instead of base64) so it fits the token
+ *      budget and serializes cleanly into the session timeline.
+ *   2. Points at a real file in the workspace so the agent's Read tool can
+ *      view the image directly.
+ *
+ * `.klaude/` is added to the workspace `.gitignore` on first use so users
+ * don't accidentally commit the temp attachments.
+ */
+const MIME_BY_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+  ico: "image/x-icon",
+  avif: "image/avif"
+};
+
+const INLINE_DATA_IMAGE_RE =
+  /!\[([^\]]*)\]\(data:image\/([a-zA-Z0-9+.-]+);base64,([A-Za-z0-9+/=]+)\)/g;
+
+async function extractInlineImages(
+  prompt: string,
+  workspaceRoot: string
+): Promise<string> {
+  if (!INLINE_DATA_IMAGE_RE.test(prompt)) return prompt;
+  INLINE_DATA_IMAGE_RE.lastIndex = 0;
+
+  const attachmentsDir = path.join(workspaceRoot, ".klaude", "attachments");
+  await fs.promises.mkdir(attachmentsDir, { recursive: true });
+  await ensureKlaudeGitignore(workspaceRoot);
+
+  // Walk all matches synchronously, queue the writes, then splice the prompt
+  // in one pass. Doing the writes off the regex iteration keeps replacement
+  // bookkeeping simple.
+  const matches: Array<{
+    full: string;
+    name: string;
+    relPath: string;
+    buffer: Buffer;
+  }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = INLINE_DATA_IMAGE_RE.exec(prompt)) !== null) {
+    const [full, rawName, ext, base64] = m;
+    const buffer = Buffer.from(base64, "base64");
+    const id = crypto.randomBytes(6).toString("hex");
+    const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+    const fileName = `${id}.${safeExt}`;
+    const absPath = path.join(attachmentsDir, fileName);
+    await fs.promises.writeFile(absPath, buffer);
+    const relPath = path.posix.join(".klaude", "attachments", fileName);
+    matches.push({ full, name: rawName || fileName, relPath, buffer });
+  }
+
+  let out = prompt;
+  for (const mt of matches) {
+    out = out.replace(mt.full, `![${mt.name}](${mt.relPath})`);
+  }
+  return out;
+}
+
+async function ensureKlaudeGitignore(workspaceRoot: string): Promise<void> {
+  const gitignorePath = path.join(workspaceRoot, ".gitignore");
+  try {
+    const existing = await fs.promises.readFile(gitignorePath, "utf8");
+    if (/^\.klaude\/?\s*$/m.test(existing)) return;
+    const sep = existing.endsWith("\n") ? "" : "\n";
+    await fs.promises.appendFile(gitignorePath, `${sep}.klaude/\n`);
+  } catch {
+    // No .gitignore yet (or read failed) — create one. Best-effort; ignore
+    // write failures (read-only FS, permissions, etc.).
+    try {
+      await fs.promises.writeFile(gitignorePath, ".klaude/\n");
+    } catch {
+      /* swallow */
+    }
+  }
 }
