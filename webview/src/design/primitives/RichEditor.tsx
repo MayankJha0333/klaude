@@ -250,7 +250,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       if (!text) return;
       // Only intercept when at least one badge pattern is present; otherwise
       // let the browser handle paste normally (which respects user intent).
-      const probe = /\*\*([^*\n]+)\*\*\n```([^\n]*)\n([\s\S]*?)\n```/;
+      const probe = /\*\*([^*\n]+)\*\*\n(`{3,})([^\n]*)\n([\s\S]*?)\n\2/;
       if (!probe.test(text)) return;
       e.preventDefault();
       insertParsedAtSelection(editor, text);
@@ -515,11 +515,12 @@ function serialize(container: HTMLElement): string {
       const label = el.querySelector(".re-badge-label")?.textContent ?? "";
       const lang = el.dataset.lang ?? "";
       const text = el.dataset.code ?? "";
+      const fence = safeCodeFence(text);
       emitNewlineIfNeeded();
       if (label) out.push(`**${label}**\n`);
-      out.push("```" + lang + "\n");
+      out.push(fence + lang + "\n");
       out.push(text.replace(/\n+$/, ""));
-      out.push("\n```\n");
+      out.push("\n" + fence + "\n");
       return;
     }
 
@@ -610,11 +611,13 @@ function buildFragmentFromMarkdown(text: string): DocumentFragment {
 
   while (i < lines.length) {
     const line = lines[i];
-    if (line.startsWith("```")) {
-      const lang = line.slice(3).trim();
+    const fenceMatch = line.match(FENCE_OPEN_RE);
+    if (fenceMatch) {
+      const fence = fenceMatch[1];
+      const lang = fenceMatch[2].trim();
       const codeLines: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].startsWith("```")) {
+      while (i < lines.length && !isFenceClose(lines[i], fence)) {
         codeLines.push(lines[i]);
         i++;
       }
@@ -655,6 +658,31 @@ function buildFragmentFromMarkdown(text: string): DocumentFragment {
   return frag;
 }
 
+/**
+ * Pick a code-fence wide enough to safely wrap `text`. CommonMark requires
+ * the outer fence to be longer than any backtick run inside the body, so a
+ * tagged file that itself contains ``` blocks (markdown, docs, etc.) still
+ * round-trips through serialize/parse without collapsing the badge at the
+ * first inner ```.
+ */
+function safeCodeFence(text: string): string {
+  let maxRun = 0;
+  const matches = text.match(/`+/g);
+  if (matches) {
+    for (const run of matches) {
+      if (run.length > maxRun) maxRun = run.length;
+    }
+  }
+  return "`".repeat(Math.max(3, maxRun + 1));
+}
+
+const FENCE_OPEN_RE = /^(`{3,})(.*)$/;
+
+function isFenceClose(line: string, fence: string): boolean {
+  const m = line.match(/^(`{3,})\s*$/);
+  return m !== null && m[1].length >= fence.length;
+}
+
 // ── Initial render (markdown → rich DOM) ───────────────────
 
 function renderInitial(container: HTMLElement, text: string) {
@@ -678,11 +706,13 @@ function renderInitial(container: HTMLElement, text: string) {
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith("```")) {
-      const lang = line.slice(3).trim();
+    const fenceMatch = line.match(FENCE_OPEN_RE);
+    if (fenceMatch) {
+      const fence = fenceMatch[1];
+      const lang = fenceMatch[2].trim();
       const codeLines: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].startsWith("```")) {
+      while (i < lines.length && !isFenceClose(lines[i], fence)) {
         codeLines.push(lines[i]);
         i++;
       }

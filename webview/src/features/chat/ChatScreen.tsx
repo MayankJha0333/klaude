@@ -595,6 +595,18 @@ function groupEvents(events: TimelineEvent[]): GroupingResult {
     } else if (lastTsInTurn !== undefined) {
       currentTurn.thoughtMs = lastTsInTurn - currentTurn.startedAt;
     }
+    // No-tools turn: the "thought" buffer IS the assistant's answer (there
+    // never was any pre-tool thinking — the agent just replied). Hoist it
+    // to responseBlocks so it stays visible when the user collapses the
+    // "Worked for" header. Without this, the final reply vanishes the
+    // moment the turn is collapsed.
+    if (firstToolTsInTurn === undefined && currentTurn.thought) {
+      currentTurn.responseBlocks.push({
+        kind: "narrative",
+        text: currentTurn.thought
+      });
+      currentTurn.thought = "";
+    }
     // Step 1: Move trailing non-toolGroup blocks (narrative + plan) into
     // responseBlocks. Anything after the last tool call is the assistant's
     // answer and shouldn't sit inside the "Worked for X" collapsible.

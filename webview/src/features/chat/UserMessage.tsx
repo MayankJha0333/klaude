@@ -43,7 +43,11 @@ type Part =
   | { kind: "badge"; label: string; lang: string; code: string }
   | { kind: "image"; name: string; src: string };
 
-const BADGE_RE = /\*\*([^*\n]+)\*\*\n```([^\n]*)\n([\s\S]*?)\n```/g;
+// Variable-length code fence with backreference: matches `` `**label**\n```lang\ncode\n``` `` AND
+// `` `**label**\n````lang\ncode (containing ``` blocks)\n```` `` etc., so tagging a markdown
+// file whose contents include ``` doesn't collapse the badge at the first inner fence.
+const BADGE_RE =
+  /\*\*([^*\n]+)\*\*\n(`{3,})([^\n]*)\n([\s\S]*?)\n\2(?=\s|$)/g;
 const IMAGE_RE = /!\[([^\]]*)\]\(([^)\s][^)]*)\)/g;
 
 /**
@@ -65,8 +69,8 @@ function parseBody(text: string): Part[] {
     parts.push({
       kind: "badge",
       label: m[1].trim(),
-      lang: m[2].trim(),
-      code: m[3]
+      lang: m[3].trim(),
+      code: m[4]
     });
     lastIndex = BADGE_RE.lastIndex;
   }
@@ -125,7 +129,8 @@ export function UserMessage({
       .map((p) => {
         if (p.kind === "text") return p.text;
         if (p.kind === "image") return `![${p.name}](${p.src})`;
-        return `**${p.label}**\n\`\`\`${p.lang}\n${p.code}\n\`\`\`\n`;
+        const fence = safeCodeFence(p.code);
+        return `**${p.label}**\n${fence}${p.lang}\n${p.code}\n${fence}\n`;
       })
       .join("");
     try {
@@ -360,7 +365,8 @@ function MsgBadge({
   // The original markdown the user typed/dragged. `onCopy` on the bubble
   // reads this attribute and substitutes it for the visible button text
   // so a copy of "the pill" yields the actual code, not just the filename.
-  const copyText = `**${label}**\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
+  const fence = safeCodeFence(code);
+  const copyText = `**${label}**\n${fence}${lang}\n${code}\n${fence}\n`;
   const parsed = parseBadgeLabel(label);
   const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -406,4 +412,20 @@ function parseBadgeLabel(label: string): {
   const start = Number(m[2]);
   const end = m[3] ? Number(m[3]) : start;
   return { file: m[1], startLine: start, endLine: end };
+}
+
+/**
+ * Pick a code-fence wide enough to safely wrap `text`. Mirrors the
+ * RichEditor's `safeCodeFence` so badge round-trips (copy → paste) survive
+ * content that itself contains ``` blocks (markdown files, etc.).
+ */
+function safeCodeFence(text: string): string {
+  let maxRun = 0;
+  const matches = text.match(/`+/g);
+  if (matches) {
+    for (const run of matches) {
+      if (run.length > maxRun) maxRun = run.length;
+    }
+  }
+  return "`".repeat(Math.max(3, maxRun + 1));
 }
