@@ -510,7 +510,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Cmd+L: pull the active editor's selection (or current line if no
+   * Cmd+U: pull the active editor's selection (or current line if no
    * selection) and surface it inside the composer as a clean attachment.
    * Strips stray slash prefixes and other formatting artifacts.
    */

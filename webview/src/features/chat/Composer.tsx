@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // Composer — chat input. Uses a contenteditable RichEditor for
 // inline rich content (no markdown markers visible to the user;
-// code from Cmd+L lands as a styled, editable block). The mode
+// code from Cmd+U lands as a styled, editable block). The mode
 // picker, skills picker, and model picker live in the toolbar
 // below.
 // ─────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ export interface ComposerProps {
   permissionMode: PermissionMode;
   models: ReadonlyArray<ModelInfo>;
   skills: ReadonlyArray<SkillInfo>;
-  /** External signal (from Cmd+L etc.) to focus the editor. */
+  /** External signal (from Cmd+U etc.) to focus the editor. */
   focusKey: number;
   /** When set, splice this code block at the caret then call onInserted. */
   pendingInsert: CodeInsert | null;
@@ -368,6 +368,10 @@ export function Composer({
           onInserted={onInserted}
           onChange={handleEditorChange}
           onSubmit={handleSubmit}
+          onOpenBadge={(file, startLine, endLine) =>
+            send({ type: "openFile", path: file, startLine, endLine })
+          }
+          onOpenMention={(path) => send({ type: "openFile", path })}
           busy={busy}
         />
       </div>
@@ -412,14 +416,14 @@ export function Composer({
           <button
             type="button"
             className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-transparent border-0 text-t3 text-[11px] font-semibold font-[inherit] cursor-pointer transition-colors hover:bg-s3 hover:text-t1"
-            title="Insert editor selection (⌘L)"
+            title="Insert editor selection (⌘U)"
             aria-label="Insert editor selection"
             onClick={() => send({ type: "captureSelection" })}
           >
             <Icon name="code" size={12} />
             <span>Selection</span>
             <kbd className="font-mono text-[10.5px] font-semibold text-t3 leading-none rounded-[4px] bg-s3 border border-b2 px-[5px] py-px">
-              ⌘L
+              ⌘U
             </kbd>
           </button>
 

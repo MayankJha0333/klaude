@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // App shell — owns auth state, timeline, and shared composer
 // inputs (models, skills, pending-insert payload). Code from
-// Cmd+L flows in as a structured payload that the RichEditor
+// Cmd+U flows in as a structured payload that the RichEditor
 // renders as an atomic, editable code block inline.
 // ─────────────────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ export function App() {
           setSkills(m.skills);
           break;
         case "insertSelection":
-          // Cmd+L payload — RichEditor renders this as a styled code block
+          // Cmd+U payload — RichEditor renders this as a styled code block
           // at the cursor; the markdown markers never appear to the user.
           setPendingInsert({
             file: m.file,

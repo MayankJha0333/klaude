@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // KeyboardHints — overlay listing the extension's shortcuts.
 // Triggered by pressing "?" (when not focused in an input). Esc to
-// dismiss. Useful for discoverability of Cmd+I / Cmd+L / Shift+Tab
+// dismiss. Useful for discoverability of Cmd+I / Cmd+U / Shift+Tab
 // and the in-webview shortcuts (Cmd+K palette, n new chat).
 // ─────────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ const GROUPS: Group[] = [
     label: "In editor",
     rows: [
       { keys: ["⌘", "I"], desc: "Inline edit at cursor" },
-      { keys: ["⌘", "L"], desc: "Send selection to chat" },
+      { keys: ["⌘", "U"], desc: "Send selection to chat" },
       { keys: ["⌘", "⇧", "I"], desc: "Toggle chat panel" }
     ]
   },

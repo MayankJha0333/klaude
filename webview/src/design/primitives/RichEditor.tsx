@@ -2,7 +2,7 @@
 // RichEditor — contenteditable composer with rich code blocks.
 //
 // The editor's DOM is the source of truth after mount. Plain text
-// flows naturally; Cmd+L (and any caller using `pendingInsert`)
+// flows naturally; Cmd+U (and any caller using `pendingInsert`)
 // inserts a styled, atomic code block at the current cursor with
 // an editable code body. Markdown syntax markers (** ` ```) never
 // appear to the user — code blocks are real DOM elements.
@@ -47,6 +47,10 @@ export interface RichEditorProps {
   onChange: (text: string) => void;
   /** Fires on Enter (without Shift) outside a code body. */
   onSubmit: () => void;
+  /** Click on a code-badge pill — open the source range in the editor. */
+  onOpenBadge?: (file: string, startLine: number, endLine: number) => void;
+  /** Click on a @file mention pill — open the file in the editor. */
+  onOpenMention?: (path: string) => void;
   busy: boolean;
   placeholder?: string;
 }
@@ -62,8 +66,10 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       onInserted,
       onChange,
       onSubmit,
+      onOpenBadge,
+      onOpenMention,
       busy,
-      placeholder = "Ask, edit, or plan anything. Type @ to mention a file. ⌘L to insert selection."
+      placeholder = "Ask, edit, or plan anything. Type @ to mention a file. ⌘U to insert selection."
     },
     forwardedRef
   ) {
@@ -84,7 +90,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Cmd+L → splice a code block at the caret.
+    // Cmd+U → splice a code block at the caret.
     useEffect(() => {
       if (!pendingInsert || !ref.current) return;
       ref.current.focus();
@@ -189,6 +195,31 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       onChange(out);
     };
 
+    // Click on a pill → open the underlying file in the editor. The pill is
+    // contenteditable=false so clicks fire normally; we still preventDefault
+    // so the caret doesn't jump to the badge's inner text node.
+    const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as Element | null;
+      if (!target) return;
+      const badge = target.closest("." + BADGE_CLASS);
+      if (badge instanceof HTMLElement) {
+        const file = badge.dataset.file;
+        if (!file) return;
+        e.preventDefault();
+        const start = Number(badge.dataset.startLine ?? 0);
+        const end = Number(badge.dataset.endLine ?? start);
+        onOpenBadge?.(file, start, end);
+        return;
+      }
+      const mention = target.closest("." + MENTION_CLASS);
+      if (mention instanceof HTMLElement) {
+        const path = mention.dataset.path;
+        if (!path) return;
+        e.preventDefault();
+        onOpenMention?.(path);
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
       if (e.nativeEvent.isComposing) return;
 
@@ -225,6 +256,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
           spellCheck={false}
           onInput={handleInput}
           onKeyDown={handleKeyDown}
+          onClick={handleClick}
           onCopy={handleCopy}
           onCut={handleCut}
           onPaste={handlePaste}
@@ -247,15 +279,24 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
  * removes it as a single unit.
  */
 function makeCodeBadge(
-  fileLabel: string,
+  file: string,
+  startLine: number,
+  endLine: number,
   language: string,
   text: string
 ): HTMLSpanElement {
+  const fileLabel = formatBadgeLabel(file, startLine, endLine);
   const badge = document.createElement("span");
   badge.className = BADGE_CLASS;
   badge.setAttribute("contenteditable", "false");
   badge.dataset.lang = language || "text";
   badge.dataset.code = text;
+  // File + line range survive copy/paste through the markdown label; these
+  // data attributes give the click-to-open handler a structured payload
+  // without re-parsing the rendered text on every click.
+  if (file) badge.dataset.file = file;
+  if (startLine > 0) badge.dataset.startLine = String(startLine);
+  if (endLine > 0) badge.dataset.endLine = String(endLine);
   badge.title = `${fileLabel}\n\n${truncate(text, 400)}`;
 
   const icon = document.createElement("span");
@@ -269,6 +310,35 @@ function makeCodeBadge(
   badge.appendChild(label);
 
   return badge;
+}
+
+/**
+ * Render the human-readable badge label from structured fields. Used both
+ * when building a fresh badge and when re-parsing one from pasted markdown.
+ * Single-line selections drop the range suffix; ranged ones use an en-dash.
+ */
+function formatBadgeLabel(file: string, start: number, end: number): string {
+  if (!file) return "code";
+  if (!start) return file;
+  if (!end || start === end) return `${file}:${start}`;
+  return `${file}:${start}–${end}`;
+}
+
+/**
+ * Inverse of `formatBadgeLabel`. Accepts both `–` (en-dash, what we emit)
+ * and `-` (plain hyphen, what users might hand-type). Falls back to the
+ * whole string as the file name when no `:line` suffix is present.
+ */
+function parseBadgeLabel(label: string): {
+  file: string;
+  startLine: number;
+  endLine: number;
+} {
+  const m = label.match(/^(.+):(\d+)(?:[–-](\d+))?$/);
+  if (!m) return { file: label, startLine: 0, endLine: 0 };
+  const start = Number(m[2]);
+  const end = m[3] ? Number(m[3]) : start;
+  return { file: m[1], startLine: start, endLine: end };
 }
 
 function truncate(s: string, n: number): string {
@@ -311,11 +381,13 @@ export function makeMentionBadge(
 }
 
 function insertCodeBlockAtSelection(container: HTMLElement, ins: CodeInsert) {
-  const range =
-    ins.startLine === ins.endLine
-      ? `${ins.startLine}`
-      : `${ins.startLine}–${ins.endLine}`;
-  const badge = makeCodeBadge(`${ins.file}:${range}`, ins.language, ins.text);
+  const badge = makeCodeBadge(
+    ins.file,
+    ins.startLine,
+    ins.endLine,
+    ins.language,
+    ins.text
+  );
 
   const sel = window.getSelection();
   let r: Range;
@@ -494,7 +566,16 @@ function buildFragmentFromMarkdown(text: string): DocumentFragment {
       }
 
       flushTextBuffer();
-      frag.appendChild(makeCodeBadge(label, lang, codeLines.join("\n")));
+      const parsed = parseBadgeLabel(label);
+      frag.appendChild(
+        makeCodeBadge(
+          parsed.file,
+          parsed.startLine,
+          parsed.endLine,
+          lang,
+          codeLines.join("\n")
+        )
+      );
       frag.appendChild(document.createTextNode(" "));
       continue;
     }
@@ -554,7 +635,14 @@ function renderInitial(container: HTMLElement, text: string) {
 
       flushTextBuffer(textBuf);
       textBuf = [];
-      const badge = makeCodeBadge(label, lang, codeLines.join("\n"));
+      const parsed = parseBadgeLabel(label);
+      const badge = makeCodeBadge(
+        parsed.file,
+        parsed.startLine,
+        parsed.endLine,
+        lang,
+        codeLines.join("\n")
+      );
       container.appendChild(badge);
       container.appendChild(document.createTextNode(" "));
       continue;
