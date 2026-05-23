@@ -618,8 +618,7 @@ function groupEvents(events: TimelineEvent[]): GroupingResult {
     // Step 2: ALSO hoist any plan blocks that ended up in the middle of the
     // work area (e.g. when the model wrote the plan, then did more reads to
     // verify before calling ExitPlanMode). Plans are deliverables — they
-    // should never be hidden behind the collapsible. Preserve chronological
-    // order with any plans already in responseBlocks.
+    // should never be hidden behind the collapsible.
     const hoistedPlans: TurnBlock[] = [];
     const remainingBlocks: TurnBlock[] = [];
     for (const b of currentTurn.blocks) {
@@ -627,7 +626,20 @@ function groupEvents(events: TimelineEvent[]): GroupingResult {
       else remainingBlocks.push(b);
     }
     currentTurn.blocks = remainingBlocks;
-    currentTurn.responseBlocks = [...hoistedPlans, ...currentTurn.responseBlocks];
+    // Plans always render at the BOTTOM of the turn so the narrative reads
+    // through to a clean call-to-action card at the end. Without this they
+    // can land mid-stream and split the explanation across the card.
+    const responsePlans: TurnBlock[] = [];
+    const responseNonPlans: TurnBlock[] = [];
+    for (const b of currentTurn.responseBlocks) {
+      if (b.kind === "plan") responsePlans.push(b);
+      else responseNonPlans.push(b);
+    }
+    currentTurn.responseBlocks = [
+      ...responseNonPlans,
+      ...hoistedPlans,
+      ...responsePlans
+    ];
 
     currentTurn = null;
     firstToolTsInTurn = undefined;
@@ -866,12 +878,16 @@ function renderTurnBlock(
       />
     );
   }
-  // plan
+  // plan — only render the LATEST revision inline. Older revisions are
+  // reachable via the card's built-in rev picker, so showing a stack of
+  // "superseded" cards is just visual noise. This keeps the transcript
+  // clean: at most one plan card surfaces at the end of the run.
   const view = ctx.views.get(b.revisionId);
   if (!view) return null;
   const ordinal = ctx.ordered.indexOf(view) + 1;
   const previous = ordinal > 1 ? ctx.ordered[ordinal - 2] : undefined;
   const isLatest = ordinal === ctx.ordered.length;
+  if (!isLatest) return null;
   return (
     <PlanCard
       key={`p-${b.revisionId}`}

@@ -14,12 +14,7 @@
 import { useMemo } from "react";
 import { Icon } from "../../design/icons";
 import { Chip } from "../../design/primitives";
-import {
-  send,
-  REQUIRED_PLAN_SECTIONS,
-  PLAN_SECTION_LABELS,
-  PlanSections
-} from "../../lib/rpc";
+import { send } from "../../lib/rpc";
 import { unresolvedComments } from "./foldPlanState";
 import { extractPlanSummary } from "./summary";
 import type { PlanRevisionView } from "./types";
@@ -41,10 +36,6 @@ export function PlanCard({ view, isLatest, ordinal }: Props) {
   const proceeded = !!view.meta.proceeded;
   const taskCount = view.meta.tasks.length;
   const completed = view.meta.tasks.filter((t) => t.status === "completed").length;
-  const sectionStatus = useMemo(
-    () => evaluateSections(view.meta.sections),
-    [view.meta.sections]
-  );
 
   const proceed = () => {
     // Don't send a chat prompt directly — that would inject a "Plan approved"
@@ -61,64 +52,69 @@ export function PlanCard({ view, isLatest, ordinal }: Props) {
     send({ type: "planOpenInEditor", revisionId: view.meta.revisionId });
   };
 
+  const tasksProgress = taskCount > 0 ? completed / taskCount : null;
+  const revisionLabel =
+    ordinal > 1 ? `Updated · v${ordinal}` : branched ? "Updated" : null;
+
   return (
-    <div className={`plan-mini${!isLatest ? " locked" : ""}${branched ? " branched" : ""}`}>
+    <div
+      className={`plan-mini${!isLatest ? " locked" : ""}${branched ? " branched" : ""}`}
+    >
       <div className="plan-mini-head">
         <span className="plan-mini-icon" aria-hidden>
-          <Icon name="file" size={14} />
+          <Icon name="layers" size={14} />
         </span>
-        <span className="plan-mini-title">{summary.title}</span>
-        {ordinal > 1 && (
-          <Chip tone="info" title="Plan revision">
-            rev {ordinal}
-          </Chip>
-        )}
-        {branched && (
-          <Chip tone="info" title="Branched after a rewind">
-            branched
-          </Chip>
-        )}
-        {proceeded && (
-          <Chip
-            tone="info"
-            title="Plan locked. Rewind to this revision's checkpoint to edit."
-          >
-            proceeded
-          </Chip>
-        )}
-        {!isLatest && <Chip tone="default">superseded</Chip>}
-      </div>
-
-      <p className="plan-mini-preview">{summary.preview}</p>
-
-      {(taskCount > 0 || pending > 0 || sectionStatus !== null) && (
-        <div className="plan-mini-meta">
-          {sectionStatus && (
+        <div className="plan-mini-titleblock">
+          <span className="plan-mini-title">{summary.title}</span>
+          {revisionLabel && (
             <span
-              className={
-                sectionStatus.complete
-                  ? "plan-mini-stat plan-mini-stat-ok"
-                  : "plan-mini-stat plan-mini-stat-warn"
-              }
+              className="plan-mini-revtag"
               title={
-                sectionStatus.complete
-                  ? "All required plan sections are present."
-                  : `Missing required sections: ${sectionStatus.missingLabels.join(", ")}`
+                branched
+                  ? "This plan was revised after a rewind."
+                  : "This plan has been updated."
               }
             >
-              <Icon name="check" size={10} />
-              {sectionStatus.present}/{sectionStatus.total} sections
-              {!sectionStatus.complete && (
-                <> · missing {sectionStatus.missingLabels.join(", ")}</>
-              )}
+              <Icon name="refresh" size={9} />
+              {revisionLabel}
             </span>
           )}
-          {taskCount > 0 && (
-            <span className="plan-mini-stat">
-              <Icon name="check" size={10} />
-              {completed}/{taskCount} task{taskCount !== 1 ? "s" : ""}
-            </span>
+        </div>
+        <span className="plan-mini-chips">
+          {proceeded && (
+            <Chip
+              tone="info"
+              title="Plan locked. Rewind to this revision's checkpoint to edit."
+            >
+              proceeded
+            </Chip>
           )}
+          {!isLatest && <Chip tone="default">superseded</Chip>}
+        </span>
+      </div>
+
+      {summary.preview && (
+        <p className="plan-mini-preview">{summary.preview}</p>
+      )}
+
+      {tasksProgress !== null && (
+        <div className="plan-mini-progress">
+          <div className="plan-mini-progress-label">
+            <span>
+              Tasks {completed}/{taskCount}
+            </span>
+          </div>
+          <div className="plan-mini-progress-bar">
+            <div
+              className="plan-mini-progress-fill"
+              style={{ width: `${Math.round(tasksProgress * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {(pending > 0 || view.questions.length > view.answers.length) && (
+        <div className="plan-mini-meta">
           {pending > 0 && (
             <span className="plan-mini-stat plan-mini-stat-warn">
               <Icon name="at" size={10} />
@@ -146,9 +142,14 @@ export function PlanCard({ view, isLatest, ordinal }: Props) {
               : undefined
           }
         >
+          <Icon name="check" size={11} />
           Proceed
         </button>
-        <button type="button" className="plan-btn" onClick={openInEditor}>
+        <button
+          type="button"
+          className="plan-btn plan-btn-ghost"
+          onClick={openInEditor}
+        >
           <Icon name="arrow" size={11} />
           Open in editor
         </button>
@@ -157,32 +158,3 @@ export function PlanCard({ view, isLatest, ordinal }: Props) {
   );
 }
 
-interface SectionStatus {
-  present: number;
-  total: number;
-  missing: Array<keyof PlanSections>;
-  missingLabels: string[];
-  complete: boolean;
-}
-
-/** Returns null if `sections` wasn't populated (legacy plan or empty body) so
- *  the badge gracefully hides. Otherwise returns counts + missing labels. */
-function evaluateSections(sections?: PlanSections): SectionStatus | null {
-  if (!sections) return null;
-  const missing: Array<keyof PlanSections> = [];
-  for (const key of REQUIRED_PLAN_SECTIONS) {
-    const value = sections[key];
-    // Treat heading with no body as missing — the model has to actually
-    // populate the section, not just print the heading.
-    if (!value || value.trim().length === 0) missing.push(key);
-  }
-  const total = REQUIRED_PLAN_SECTIONS.length;
-  const present = total - missing.length;
-  return {
-    present,
-    total,
-    missing,
-    missingLabels: missing.map((k) => PLAN_SECTION_LABELS[k]),
-    complete: missing.length === 0
-  };
-}

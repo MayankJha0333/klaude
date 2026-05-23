@@ -3363,46 +3363,105 @@ h6.md-h {
    ────────────────────────────────────────────────────────── */
 
 /* ── Compact PlanCard (chat-stream representation) ─────────── */
+/* ── Plan card (chat-stream summary of a plan revision) ─────
+   Goal: clean, document-like card. Subtle accent-tinted surface,
+   prominent title block, refined progress chips, primary-action
+   gradient. Lives in the conversation flow so it must read as a
+   first-class artifact without screaming for attention. */
 .plan-mini {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 12px 0;
-  padding: 12px 14px;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 14px 16px 12px;
   background: var(--s2);
   border: 1px solid var(--b2);
-  border-radius: 9px;
+  border-radius: 12px;
   animation: fadein 160ms ease-out;
-  max-width: 560px;
+  max-width: 620px;
+  transition: border-color 160ms ease;
 }
-.plan-mini.locked { opacity: 0.7; }
-.plan-mini.branched { border-left: 3px solid var(--accent); }
+.plan-mini:hover {
+  border-color: var(--b3);
+}
+.plan-mini.locked { opacity: 0.65; }
+.plan-mini.branched {
+  border-left: 3px solid var(--accent);
+  padding-left: 13px;
+}
 
 .plan-mini-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .plan-mini-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--t2);
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-mid);
+  color: var(--accent-glow);
+  flex-shrink: 0;
+}
+.plan-mini-titleblock {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .plan-mini-title {
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
   color: var(--t1);
-  flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.plan-mini-revtag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  color: var(--t3);
+  width: fit-content;
+}
+.plan-mini-revtag :global(svg) { opacity: 0.7; }
+.plan-mini-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.plan-mini-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  color: #fbbf24;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.plan-mini-warn strong {
+  font-weight: 700;
+  color: #fcd34d;
 }
 
 .plan-mini-preview {
   margin: 0;
   font-size: 12.5px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--t2);
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -3413,59 +3472,125 @@ h6.md-h {
 .plan-mini-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  font-size: 11px;
-  color: var(--t3);
+  gap: 6px;
 }
 .plan-mini-stat {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  background: var(--s3);
+  border: 1px solid var(--b1);
+  color: var(--t2);
+}
+.plan-mini-stat-warn {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+.plan-mini-stat-accent {
+  color: var(--accent-glow);
+  background: var(--accent-soft);
+  border-color: var(--accent-mid);
+}
+.plan-mini-stat-ok {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.25);
+}
+
+.plan-mini-progress {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
 }
-.plan-mini-stat-warn { color: #fbbf24; }
-.plan-mini-stat-accent { color: var(--accent-glow); }
-.plan-mini-stat-ok { color: #4ade80; }
+.plan-mini-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--t3);
+}
+.plan-mini-progress-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--s3);
+  overflow: hidden;
+}
+.plan-mini-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-glow));
+  transition: width 220ms ease;
+}
 
 .plan-mini-actions {
   display: flex;
   gap: 8px;
-  padding-top: 4px;
+  padding-top: 6px;
+  margin-top: 2px;
+  border-top: 1px solid var(--b1);
+  padding-top: 12px;
 }
 
 /* ── Plan-card buttons (shared with modal) ─────────────────── */
 .plan-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 14px;
-  border-radius: 6px;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 7px;
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: -0.1px;
   cursor: pointer;
   border: 1px solid var(--b2);
   background: var(--s3);
   color: var(--t1);
   font-family: inherit;
+  transition: background 140ms ease, border-color 140ms ease,
+    transform 120ms ease, box-shadow 140ms ease;
 }
 .plan-btn:hover:not(:disabled) {
   background: var(--s2);
   border-color: var(--b3);
 }
+.plan-btn:active:not(:disabled) { transform: translateY(1px); }
 .plan-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .plan-btn-primary {
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: white;
   border-color: var(--accent-deep);
+  box-shadow: 0 2px 8px var(--accent-shadow);
 }
 .plan-btn-primary:hover:not(:disabled) {
-  background: var(--accent-deep);
+  background: linear-gradient(180deg, var(--accent-deep), var(--accent-deep));
+  box-shadow: 0 4px 14px var(--accent-shadow);
 }
 .plan-btn-success {
-  background: #10b981;
+  background: linear-gradient(180deg, #10b981, #059669);
   color: white;
-  border-color: #059669;
+  border-color: #047857;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
 }
-.plan-btn-success:hover:not(:disabled) { background: #059669; }
+.plan-btn-success:hover:not(:disabled) {
+  background: linear-gradient(180deg, #059669, #047857);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+}
+.plan-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--t2);
+}
+.plan-btn-ghost:hover:not(:disabled) {
+  background: var(--s3);
+  color: var(--t1);
+  border-color: var(--b2);
+}
 .plan-btn-block { width: 100%; justify-content: center; }
 
 /* ── Inline expanded plan card (lives in the chat stream) ──── */
