@@ -357,37 +357,53 @@ function MsgBadge({
   lang: string;
   code: string;
 }) {
-  const [open, setOpen] = useState(false);
   // The original markdown the user typed/dragged. `onCopy` on the bubble
   // reads this attribute and substitutes it for the visible button text
   // so a copy of "the pill" yields the actual code, not just the filename.
   const copyText = `**${label}**\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
+  const parsed = parseBadgeLabel(label);
+  const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!parsed.file) return;
+    send({
+      type: "openFile",
+      path: parsed.file,
+      startLine: parsed.startLine,
+      endLine: parsed.endLine
+    });
+  };
   return (
     <span
-      className={`inline-flex flex-col align-middle my-1${open ? " w-full" : ""}`}
+      className="inline-flex align-middle my-0.5"
       data-copy-text={copyText}
     >
       <button
         type="button"
-        className={`re-badge inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md bg-s2 border border-b2 text-t2 text-[11.5px] font-mono cursor-pointer align-middle transition-colors duration-[120ms] hover:bg-s3 hover:text-t1 hover:border-b3${
-          open ? " bg-s3 text-t1 border-b3" : ""
-        }`}
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        title={label}
+        className="re-badge"
+        onClick={handleClick}
+        title={parsed.file ? `Open ${label}` : label}
       >
-        <span className="re-badge-icon font-mono text-accent-glow text-[10px] font-bold">{"</>"}</span>
+        <span className="re-badge-icon">{"</>"}</span>
         <span className="re-badge-label">{label}</span>
-        <Icon name={open ? "chevronU" : "chevronD"} size={9} />
       </button>
-      {open && (
-        <pre
-          className="mt-1.5 mb-2 px-3 py-2 rounded-md bg-s2 border border-b1 text-[12px] font-mono text-t2 leading-[1.55] whitespace-pre-wrap break-words overflow-x-auto"
-          data-lang={lang || "text"}
-        >
-          <code>{code}</code>
-        </pre>
-      )}
     </span>
   );
+}
+
+/**
+ * Inverse of the composer's `formatBadgeLabel` — turn `file:start–end` (or
+ * `file:start-end` / `file:start`) back into structured fields so clicking
+ * the pill can open the right file range. Kept in sync by hand with the
+ * RichEditor's parser; the data is just simple enough to duplicate.
+ */
+function parseBadgeLabel(label: string): {
+  file: string;
+  startLine: number;
+  endLine: number;
+} {
+  const m = label.match(/^(.+):(\d+)(?:[–-](\d+))?$/);
+  if (!m) return { file: label, startLine: 0, endLine: 0 };
+  const start = Number(m[2]);
+  const end = m[3] ? Number(m[3]) : start;
+  return { file: m[1], startLine: start, endLine: end };
 }
