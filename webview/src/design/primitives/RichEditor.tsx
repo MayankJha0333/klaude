@@ -51,6 +51,13 @@ export interface RichEditorProps {
   onOpenBadge?: (file: string, startLine: number, endLine: number) => void;
   /** Click on a @file mention pill — open the file in the editor. */
   onOpenMention?: (path: string) => void;
+  /**
+   * Image files pasted from the clipboard. When provided, the editor catches
+   * the paste, prevents the default `<img>`-into-contenteditable behavior,
+   * and hands the files to the parent (which typically renders them as
+   * attachment chips above the composer).
+   */
+  onImagePaste?: (files: File[]) => void;
   busy: boolean;
   placeholder?: string;
 }
@@ -68,6 +75,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       onSubmit,
       onOpenBadge,
       onOpenMention,
+      onImagePaste,
       busy,
       placeholder = "Ask, edit, or plan anything. Type @ to mention a file. ⌘U to insert selection."
     },
@@ -89,6 +97,42 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
       // intentionally only on mount
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Native capture-phase guards so the browser never gets to insert a
+    // dragged or pasted image as an inline <img> inside the contenteditable.
+    // React's synthetic events delegate at the root and run in the bubble
+    // phase — for `drop` and `paste` on a contenteditable that's sometimes
+    // too late: the browser has already committed the default action. We
+    // attach native listeners directly with capture=true so preventDefault
+    // is registered before the browser's default fires.
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return;
+      const block = (e: Event) => e.preventDefault();
+      const onPaste = (ev: Event) => {
+        const e = ev as globalThis.ClipboardEvent;
+        if (!onImagePaste || !e.clipboardData) return;
+        const files: File[] = [];
+        for (const item of Array.from(e.clipboardData.items)) {
+          if (item.kind === "file" && item.type.startsWith("image/")) {
+            const f = item.getAsFile();
+            if (f) files.push(f);
+          }
+        }
+        if (files.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onImagePaste(files);
+      };
+      el.addEventListener("dragover", block, true);
+      el.addEventListener("drop", block, true);
+      el.addEventListener("paste", onPaste, true);
+      return () => {
+        el.removeEventListener("dragover", block, true);
+        el.removeEventListener("drop", block, true);
+        el.removeEventListener("paste", onPaste, true);
+      };
+    }, [onImagePaste]);
 
     // Cmd+U → splice a code block at the caret.
     useEffect(() => {
@@ -182,6 +226,26 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
     const handlePaste = (e: ClipboardEvent<HTMLDivElement>) => {
       const editor = ref.current;
       if (!editor) return;
+
+      // Clipboard images (Cmd+V of a screenshot, image copied from a browser,
+      // etc.) — pull them out before the browser embeds them inline. We walk
+      // `items` because `files` is sometimes empty for clipboard images even
+      // when an image is clearly present.
+      if (onImagePaste) {
+        const imageFiles: File[] = [];
+        for (const item of Array.from(e.clipboardData.items)) {
+          if (item.kind === "file" && item.type.startsWith("image/")) {
+            const f = item.getAsFile();
+            if (f) imageFiles.push(f);
+          }
+        }
+        if (imageFiles.length > 0) {
+          e.preventDefault();
+          onImagePaste(imageFiles);
+          return;
+        }
+      }
+
       const text = e.clipboardData.getData("text/plain");
       if (!text) return;
       // Only intercept when at least one badge pattern is present; otherwise
@@ -260,6 +324,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(
           onCopy={handleCopy}
           onCut={handleCut}
           onPaste={handlePaste}
+          // Block native browser drop into the contenteditable — otherwise
+          // dragging an image from Finder embeds it as a giant <img> inside
+          // the editor. The Composer's wrapper handles attachments above.
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => e.preventDefault()}
           role="textbox"
           aria-multiline="true"
           aria-label="Message Klaude"
