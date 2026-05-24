@@ -68,6 +68,10 @@
       {
         "command": "klaude.generateConventions",
         "title": "Klaude: Generate CLAUDE.md"
+      },
+      {
+        "command": "klaude.openConnectors",
+        "title": "Klaude: Open Connectors"
       }
     ],
     "keybindings": [

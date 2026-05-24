@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   send,
+  onMessage,
   TimelineEvent,
   EditorContext,
   PermissionMode,
@@ -13,6 +14,7 @@ import {
   SkillInfo,
   ConventionsSource
 } from "../../lib/rpc";
+import { ConnectorsModal } from "../mcp";
 import type { CodeInsert } from "../../design/primitives";
 import { Header } from "./Header";
 import { Composer } from "./Composer";
@@ -123,6 +125,15 @@ export function ChatScreen({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [hintsOpen, setHintsOpen] = useState(false);
+  const [connectorsOpen, setConnectorsOpen] = useState(false);
+
+  // Host-initiated "open connectors" command (from the `klaude.openConnectors`
+  // VS Code command). Listens for the RPC message and reveals the modal.
+  useEffect(() => {
+    return onMessage((m) => {
+      if (m.type === "openConnectors") setConnectorsOpen(true);
+    });
+  }, []);
   // Session epoch — bumps when the timeline goes from non-empty → empty (i.e.
   // user clicked "New chat"). Wrapping the log content in AnimatePresence with
   // a key tied to this number gives a clean fade-out / fade-in on reset rather
@@ -257,6 +268,7 @@ export function ChatScreen({
         events={events}
         streaming={streaming}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenConnectors={() => setConnectorsOpen(true)}
       />
 
       {bannerVisible && (
@@ -384,6 +396,11 @@ export function ChatScreen({
           send({ type: "loadSession", id });
           setHistoryOpen(false);
         }}
+      />
+
+      <ConnectorsModal
+        open={connectorsOpen}
+        onClose={() => setConnectorsOpen(false)}
       />
 
       <AnimatePresence>

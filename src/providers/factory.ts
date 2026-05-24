@@ -32,6 +32,10 @@ export interface ProviderContext {
   setResumeSessionId?: (id: string) => void;
   /** Auth token (OAuth or API key) injected into the CLI's environment. */
   token?: string;
+  /** Optional path to a temp JSON file in CLI's `--mcp-config` format. */
+  mcpConfigPath?: string;
+  /** Names of the MCP servers in mcpConfigPath — used for auto-mode allowlist. */
+  mcpServerNames?: string[];
 }
 
 // The Claude CLI ships inside the extension via the
@@ -65,6 +69,8 @@ export function createProvider(ctx: ProviderContext): ChatProvider {
     conventions: ctx.conventions,
     getResumeSessionId: ctx.getResumeSessionId,
     setResumeSessionId: ctx.setResumeSessionId,
-    token: ctx.token
+    token: ctx.token,
+    mcpConfigPath: ctx.mcpConfigPath,
+    mcpServerNames: ctx.mcpServerNames
   });
 }

@@ -44,7 +44,8 @@ export const ICON_PATHS = {
   zap: "M13 2l-3 7h5l-6 9 2-7H6l7-9z",
   git: "M15 12a3 3 0 11-5 2L7 11a3 3 0 110-4l3 3a3 3 0 015 2z",
   refresh: "M3 10a7 7 0 0112-5l2 2 M17 4v4h-4 M17 10a7 7 0 01-12 5l-2-2 M3 16v-4h4",
-  logout: "M9 18H5a2 2 0 01-2-2V4a2 2 0 012-2h4 M16 14l4-4-4-4 M20 10H9"
+  logout: "M9 18H5a2 2 0 01-2-2V4a2 2 0 012-2h4 M16 14l4-4-4-4 M20 10H9",
+  plug: "M7 2v4 M13 2v4 M5 6h10v4a5 5 0 01-10 0V6z M10 15v3"
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

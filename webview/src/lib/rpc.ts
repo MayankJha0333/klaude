@@ -213,6 +213,41 @@ export interface HistoryEntry {
   eventCount: number;
 }
 
+// ── MCP connectors ────────────────────────────────────────
+
+export interface ConnectorTool {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface ConnectorView {
+  id: string;
+  name: string;
+  vendor: string;
+  description: string;
+  url: string;
+  transport: "streamable-http" | "sse";
+  categories: string[];
+  /** Icon name from our local design/icons.tsx registry. */
+  icon: string;
+  homepage?: string;
+  builtIn: boolean;
+  status: "connected" | "disconnected" | "error";
+  connectedAt?: number;
+  toolCount: number;
+  tools?: ConnectorTool[];
+  lastError?: string;
+}
+
+export interface CustomConnectorDraft {
+  name: string;
+  url: string;
+  clientId?: string;
+  clientSecret?: string;
+}
+
 // ── Outbound (webview → extension) ────────────────────────────
 
 export type Outbound =
@@ -300,7 +335,13 @@ export type Outbound =
   | { type: "dismissConventionsBanner" }
   | { type: "openConventionsFile"; path: string }
   | { type: "generateConventions" }
-  | { type: "dismissSkillSuggestion"; skillId: string };
+  | { type: "dismissSkillSuggestion"; skillId: string }
+  | { type: "requestConnectors" }
+  | { type: "connectorConnect"; id: string }
+  | { type: "connectorCancelConnect"; id: string }
+  | { type: "connectorDisconnect"; id: string }
+  | { type: "connectorAddCustom"; draft: CustomConnectorDraft }
+  | { type: "connectorRemoveCustom"; id: string };
 
 // ── Inbound (extension → webview) ─────────────────────────────
 
@@ -395,6 +436,19 @@ export type Inbound =
       rateLimit?: RateLimitInfo;
     }
   | { type: "revertResult"; path: string; ok: boolean; error?: string }
+  | { type: "connectorsList"; connectors: ConnectorView[] }
+  | { type: "openConnectors" }
+  | {
+      type: "connectorResult";
+      action: "connect" | "disconnect" | "add" | "remove" | "cancel";
+      id: string;
+      ok: boolean;
+      /** True when the failure was due to the user clicking Cancel. */
+      cancelled?: boolean;
+      error?: string;
+      /** Updated view of the connector after a successful action. */
+      connector?: ConnectorView;
+    }
   | {
       type: "claudeCodeUsage";
       /** Authoritative usage aggregated from ~/.claude/projects/<cwd>/*.jsonl */

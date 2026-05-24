@@ -32,6 +32,9 @@ export function activate(ctx: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand("klaude.generateConventions", () =>
       generateConventionsCommand(panel)
+    ),
+    vscode.commands.registerCommand("klaude.openConnectors", () =>
+      panel.openConnectors()
     )
   );
 }

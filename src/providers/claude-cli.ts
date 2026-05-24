@@ -27,6 +27,14 @@ export interface ClaudeCliOpts {
    *  injected as `ANTHROPIC_API_KEY` when spawning the CLI. Optional —
    *  if absent the CLI falls back to its own `~/.claude/` credentials. */
   token?: string;
+  /** Path to a temporary JSON file describing connected MCP servers, in
+   *  the CLI's `--mcp-config` format. Caller is responsible for deleting
+   *  the file after the turn completes. */
+  mcpConfigPath?: string;
+  /** Names of the MCP servers in `mcpConfigPath`. Used to pre-allow their
+   *  tools in auto mode so the agent can call them without per-tool
+   *  approval prompts. */
+  mcpServerNames?: string[];
 }
 
 export class ClaudeCliProvider implements ChatProvider {
@@ -146,16 +154,38 @@ export function buildArgs(
   const cliMode = mapPermissionMode(opts.permissionMode ?? "default");
   args.push("--permission-mode", cliMode);
 
-  if (opts.permissionMode === "auto" && opts.allowedBashPatterns?.length) {
+  if (
+    opts.permissionMode === "auto" &&
+    (opts.allowedBashPatterns?.length || opts.mcpServerNames?.length)
+  ) {
     const tools = [
       "Read",
       "Glob",
       "Grep",
       "Edit",
       "Write",
-      ...opts.allowedBashPatterns.map((p) => `Bash(${regexToCliPattern(p)})`)
+      ...(opts.allowedBashPatterns ?? []).map(
+        (p) => `Bash(${regexToCliPattern(p)})`
+      ),
+      // Pre-allow every tool from each connected MCP server. Pattern is
+      // `mcp__<server>` per Claude Code's MCP tool naming convention.
+      ...(opts.mcpServerNames ?? []).map((n) => `mcp__${n}`)
     ];
     args.push("--allowedTools", ...tools);
+  } else if (
+    opts.permissionMode === "default" &&
+    opts.mcpServerNames?.length
+  ) {
+    // Default mode otherwise gates every tool call behind an interactive
+    // prompt the `-p` flow can't service — the agent ends up verbalizing
+    // "I need permission" instead of actually invoking the tool. Connecting
+    // an MCP server via the Connectors page is an explicit consent grant
+    // (OAuth + click-through), so pre-allow that server's tools here.
+    // Plan mode is intentionally not covered — it's read-only by design.
+    args.push(
+      "--allowedTools",
+      ...opts.mcpServerNames.map((n) => `mcp__${n}`)
+    );
   }
 
   // Skills the user has toggled off in the picker need to be *actually*
@@ -197,6 +227,14 @@ export function buildArgs(
       "--append-system-prompt",
       `Project conventions from \`${opts.conventions.workspaceRelativePath}\`:\n\n${opts.conventions.content}`
     );
+  }
+
+  // Hand the CLI a list of remote MCP servers it should connect to for
+  // this turn. The file is generated per-turn from Klaude's connector
+  // state, and the bearer tokens it contains live in OS temp with
+  // mode 0600 — see writeCliMcpConfig() in services/mcp/index.ts.
+  if (opts.mcpConfigPath) {
+    args.push("--mcp-config", opts.mcpConfigPath);
   }
 
   const resumeId = opts.getResumeSessionId?.();

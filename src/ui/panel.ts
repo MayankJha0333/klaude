@@ -28,6 +28,17 @@ import {
   InstallTarget
 } from "../services/marketplace.js";
 import { aggregateClaudeCodeUsage } from "../services/claude-code-usage.js";
+import {
+  listConnectors as mcpListConnectors,
+  connect as mcpConnect,
+  cancelConnect as mcpCancelConnect,
+  disconnect as mcpDisconnect,
+  addCustom as mcpAddCustom,
+  removeCustom as mcpRemoveCustom,
+  writeCliMcpConfig,
+  OAuthCancelled as McpOAuthCancelled,
+  CustomDraft as McpCustomDraft
+} from "../services/mcp/index.js";
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = "klaude.chat";
@@ -495,6 +506,14 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     this.view?.show?.(true);
   }
 
+  /** Reveal the chat panel and instruct the webview to open the Connectors modal. */
+  openConnectors() {
+    this.reveal();
+    this.post({ type: "openConnectors" });
+    // Best-effort: also push the current list so the modal opens with data.
+    this.broadcastConnectors();
+  }
+
   newSession() {
     this.artifacts.closeAll();
     this.initSession();
@@ -888,7 +907,136 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           }
         }
         break;
+      case "requestConnectors":
+        this.broadcastConnectors();
+        break;
+      case "connectorConnect":
+        if (typeof msg.id === "string") {
+          await this.handleConnectorConnect(msg.id);
+        }
+        break;
+      case "connectorCancelConnect":
+        if (typeof msg.id === "string") {
+          this.handleConnectorCancelConnect(msg.id);
+        }
+        break;
+      case "connectorDisconnect":
+        if (typeof msg.id === "string") {
+          await this.handleConnectorDisconnect(msg.id);
+        }
+        break;
+      case "connectorAddCustom":
+        if (msg.draft && typeof msg.draft === "object") {
+          await this.handleConnectorAddCustom(msg.draft as McpCustomDraft);
+        }
+        break;
+      case "connectorRemoveCustom":
+        if (typeof msg.id === "string") {
+          await this.handleConnectorRemoveCustom(msg.id);
+        }
+        break;
     }
+  }
+
+  // ── MCP connector handlers ──────────────────────────────────
+
+  private broadcastConnectors(): void {
+    try {
+      const connectors = mcpListConnectors(this.ctx);
+      this.post({ type: "connectorsList", connectors });
+    } catch (err) {
+      this.post({
+        type: "error",
+        message: `Couldn't list connectors: ${err instanceof Error ? err.message : String(err)}`
+      });
+    }
+  }
+
+  private async handleConnectorConnect(id: string): Promise<void> {
+    try {
+      const connector = await mcpConnect(this.ctx, id);
+      this.post({ type: "connectorResult", action: "connect", id, ok: true, connector });
+    } catch (err) {
+      // Cancellation isn't an "error" the user needs to see in red — flag
+      // it so the webview can clear the spinner without showing a toast.
+      const cancelled = err instanceof McpOAuthCancelled;
+      this.post({
+        type: "connectorResult",
+        action: "connect",
+        id,
+        ok: false,
+        cancelled,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+    this.broadcastConnectors();
+  }
+
+  private handleConnectorCancelConnect(id: string): void {
+    const cancelled = mcpCancelConnect(id);
+    // We always echo back the cancel result so the webview can clear the
+    // pending state immediately, even if there was no in-flight attempt
+    // (e.g. the user clicked Cancel after the host already resolved).
+    this.post({
+      type: "connectorResult",
+      action: "cancel",
+      id,
+      ok: cancelled
+    });
+  }
+
+  private async handleConnectorDisconnect(id: string): Promise<void> {
+    try {
+      await mcpDisconnect(this.ctx, id);
+      this.post({ type: "connectorResult", action: "disconnect", id, ok: true });
+    } catch (err) {
+      this.post({
+        type: "connectorResult",
+        action: "disconnect",
+        id,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+    this.broadcastConnectors();
+  }
+
+  private async handleConnectorAddCustom(draft: McpCustomDraft): Promise<void> {
+    try {
+      const connector = await mcpAddCustom(this.ctx, draft);
+      this.post({
+        type: "connectorResult",
+        action: "add",
+        id: connector.id,
+        ok: true,
+        connector
+      });
+    } catch (err) {
+      this.post({
+        type: "connectorResult",
+        action: "add",
+        id: "",
+        ok: false,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+    this.broadcastConnectors();
+  }
+
+  private async handleConnectorRemoveCustom(id: string): Promise<void> {
+    try {
+      await mcpRemoveCustom(this.ctx, id);
+      this.post({ type: "connectorResult", action: "remove", id, ok: true });
+    } catch (err) {
+      this.post({
+        type: "connectorResult",
+        action: "remove",
+        id,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+    this.broadcastConnectors();
   }
 
   /** Tell the webview which conventions file is loaded so the status pill can
@@ -1826,6 +1974,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     const conventions = await loadConventions(workspaceRoot);
     this.broadcastConventionsStatus(conventions);
 
+    // Materialize the per-turn MCP config the CLI consumes via
+    // `--mcp-config`. Contains only currently-connected servers with
+    // their bearer tokens; written to OS temp with mode 0600 and
+    // unlinked after the CLI exits below.
+    let mcpConfig: Awaited<ReturnType<typeof writeCliMcpConfig>> = null;
+    try {
+      mcpConfig = await writeCliMcpConfig(this.ctx);
+    } catch {
+      mcpConfig = null;
+    }
+
     let providerInstance;
     try {
       providerInstance = createProvider({
@@ -1839,11 +1998,14 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         setResumeSessionId: (id) => {
           this.resumeId = id;
         },
-        token
+        token,
+        mcpConfigPath: mcpConfig?.path,
+        mcpServerNames: mcpConfig?.serverNames
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.post({ type: "error", message: msg });
+      void mcpConfig?.cleanup();
       return;
     }
 
@@ -1902,6 +2064,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       // its session JSONL synchronously, so by this point the new tokens
       // are on disk and the aggregator will pick them up.
       void this.broadcastClaudeCodeUsage();
+      // Drop the per-turn MCP config so the bearer tokens it held don't
+      // sit on disk between turns.
+      void mcpConfig?.cleanup();
     }
   }
 
