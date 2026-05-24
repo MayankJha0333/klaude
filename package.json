@@ -12,6 +12,14 @@
     "Programming Languages",
     "Other"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MayankJha0333/klaude.git"
+  },
+  "homepage": "https://github.com/MayankJha0333/klaude#readme",
+  "bugs": {
+    "url": "https://github.com/MayankJha0333/klaude/issues"
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished"

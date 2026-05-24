@@ -276,7 +276,6 @@ export function makeProcessor(setResume?: (id: string) => void): Processor {
   let sawPartialText = false;
   const startedToolIds = new Set<string>();
   let currentBlockType: "text" | "tool_use" | "other" | null = null;
-  let currentToolId: string | null = null;
 
   return (ev) => {
     const out: StreamDelta[] = [];
@@ -295,7 +294,6 @@ export function makeProcessor(setResume?: (id: string) => void): Processor {
           currentBlockType = "tool_use";
           const id = inner.content_block.id ?? "";
           const name = inner.content_block.name ?? "tool";
-          currentToolId = id;
           if (id) startedToolIds.add(id);
           out.push({ type: "tool_use_start", tool: { id, name } });
         } else {
@@ -323,7 +321,6 @@ export function makeProcessor(setResume?: (id: string) => void): Processor {
       if (inner.type === "content_block_stop") {
         if (currentBlockType === "tool_use") {
           out.push({ type: "tool_use_end" });
-          currentToolId = null;
         }
         currentBlockType = null;
         return out;

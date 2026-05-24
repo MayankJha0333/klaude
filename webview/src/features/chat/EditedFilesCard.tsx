@@ -219,7 +219,6 @@ export function EditedFilesCard({ edits, onAddDiffNote }: EditedFilesCardProps) 
                     entry={e}
                     revertState={revertState.get(e.path) ?? "idle"}
                     revertError={revertError.get(e.path)}
-                    onOpenDiff={(rect) => setOpenState({ entry: e, rect })}
                     onOpenInEditor={() => send({ type: "openFile", path: e.path })}
                   />
                 </motion.li>
@@ -249,13 +248,11 @@ function FileRow({
   entry,
   revertState,
   revertError,
-  onOpenDiff,
   onOpenInEditor
 }: {
   entry: FileEditEntry;
   revertState: RevertState;
   revertError?: string;
-  onOpenDiff: (rect: DOMRect | null) => void;
   onOpenInEditor: () => void;
 }) {
   const name = baseName(entry.path);

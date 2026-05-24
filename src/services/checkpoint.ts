@@ -22,7 +22,7 @@ export class CheckpointService {
   private checkpoints: Map<string, Checkpoint> = new Map();
   private order: string[] = [];
 
-  constructor(private workspaceRoot: string, private sessionId: string) {}
+  constructor(private workspaceRoot: string) {}
 
   /**
    * Normalize a path coming from the agent/tool into a workspace-relative

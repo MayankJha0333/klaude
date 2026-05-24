@@ -159,7 +159,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private ensureCheckpoints(workspaceRoot: string) {
     if (!this.checkpoints) {
-      this.checkpoints = new CheckpointService(workspaceRoot, this.session.id);
+      this.checkpoints = new CheckpointService(workspaceRoot);
     }
   }
 

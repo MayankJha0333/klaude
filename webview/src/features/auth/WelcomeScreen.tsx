@@ -12,7 +12,7 @@
 // click away.
 // ─────────────────────────────────────────────────────────────
 
-import { KeyboardEvent, ReactNode, useEffect, useState } from "react";
+import { KeyboardEvent, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Orb, Spinner } from "../../design/primitives";
 import { Icon } from "../../design/icons";

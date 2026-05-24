@@ -329,7 +329,6 @@ interface Bucket {
 
 function groupByBucket(sessions: HistoryEntry[]): Bucket[] {
   if (sessions.length === 0) return [];
-  const now = Date.now();
   const oneDay = 86_400_000;
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
