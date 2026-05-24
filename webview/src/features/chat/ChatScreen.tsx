@@ -257,7 +257,6 @@ export function ChatScreen({
         events={events}
         streaming={streaming}
         onOpenHistory={() => setHistoryOpen(true)}
-        onOpenPalette={() => setPaletteOpen(true)}
       />
 
       {bannerVisible && (

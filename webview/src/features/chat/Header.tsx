@@ -25,7 +25,6 @@ interface HeaderProps {
   events: ReadonlyArray<TimelineEvent>;
   streaming: string;
   onOpenHistory: () => void;
-  onOpenPalette: () => void;
 }
 
 export function Header({
@@ -34,8 +33,7 @@ export function Header({
   conventions,
   events,
   streaming,
-  onOpenHistory,
-  onOpenPalette
+  onOpenHistory
 }: HeaderProps) {
   const mode = findMode(permissionMode);
   const [newChatTick, setNewChatTick] = useState(0);
@@ -93,12 +91,6 @@ export function Header({
       <div className="flex gap-0.5 flex-shrink-0 items-center">
         <TokenMeter events={events} streaming={streaming} />
         <div className="w-px h-4 bg-b1 mx-1" />
-        <IconButton
-          icon="search"
-          title="Command palette (⌘K)"
-          size={28}
-          onClick={onOpenPalette}
-        />
         <IconButton icon="history" title="Chat history" size={28} onClick={onOpenHistory} />
         <motion.button
           key={`new-chat-${newChatTick}`}
