@@ -29,6 +29,7 @@ Klaude brings the full Claude Code agent into a native VS Code side panel: strea
 - 📝 **Plan-mode review.** Pop the plan into its own editor tab, leave inline comments on individual steps, and ship the revised plan back to the agent in one click.
 - 🧠 **Project conventions.** Reads `CLAUDE.md` / `AGENTS.md` automatically; one-click "Generate CLAUDE.md" to bootstrap a new repo.
 - 🧩 **Skills marketplace.** Browse and install any skill from [claude-plugins.dev](https://claude-plugins.dev) directly from the panel.
+- 🔌 **MCP connectors.** Browse and connect remote MCP servers — Linear, Notion, Atlassian, Sentry and more — over OAuth, straight from the panel.
 - 🕰 **Checkpoints + rewind.** Every assistant turn snapshots edited files so you can roll back without leaving the chat.
 - 📦 **Bundled CLI.** Ships with `@anthropic-ai/claude-code` — no separate install step.
 
@@ -75,8 +76,6 @@ Open any workspace and pick a starter, or just type. `@` mentions a file, drag-d
 
 Cycle with **Shift+Tab** (when chat is focused) or the **Klaude: Cycle Permission Mode** command.
 
-![Permission modes](assets/permission-modes.png)
-
 | Mode | Behavior |
 |---|---|
 | **Ask** *(default)* | Every tool call prompts for approval. Best for unfamiliar repos. |
@@ -89,14 +88,9 @@ Protected paths (`.git`, `.env*`, `.ssh`, shell rc files) always prompt regardle
 
 ## Skills
 
-Skills extend the agent with reusable, scoped capabilities. The built-in picker shows everything available in this session — built-ins, Claude Code agent tools, and any project- or user-scoped skills you've installed.
-
-![Skills picker](assets/skills-picker.png)
-
-Browse and install from **claude-plugins.dev** without leaving the panel:
+Skills extend the agent with reusable, scoped capabilities — built-ins, Claude Code agent tools, and any project- or user-scoped skills you've installed. Browse and install from **claude-plugins.dev** without leaving the panel:
 
 ![Skills marketplace](assets/skills-marketplace.png)
-![Skills installed](assets/skills-installed.png)
 
 Install scope is per-skill:
 
@@ -105,22 +99,29 @@ Install scope is per-skill:
 
 ---
 
-## Chat in action
+## Connectors (MCP)
 
-![Chat with file context and image](assets/chat-in-action.png)
+Connect remote **MCP servers** — Linear, Notion, Atlassian, Asana, Intercom, Sentry, PayPal, HubSpot, or any custom endpoint — over OAuth without leaving the panel. The agent can then read and act on that data as part of a chat.
+
+![Connectors](assets/connectors.png)
+
+---
+
+## Chat in action
 
 - **`@filename`** inserts a file mention; the contents are sent to the model when relevant.
 - **Cmd+U** with a selection sends the highlighted code straight into the composer.
 - **Screenshots** paste as image attachments — useful for explaining UI bugs.
 - **Slash commands** in the composer trigger built-in workflows or installed skill commands.
+- **Chat history** — browse and resume any past session from the history drawer.
+
+![Chat history — browse and resume past sessions](assets/chat-history.png)
 
 ---
 
 ## Project conventions
 
 Klaude looks for `CLAUDE.md` (or `AGENTS.md`) at your workspace root and injects it into every system prompt. If neither exists, the **Generate** action analyzes your repo and writes one for you.
-
-![Conventions + edits with diff stats](assets/conventions-and-edits.png)
 
 Edited files appear as a collapsible card under the assistant turn with line-add / line-remove counts and an **Undo** button that restores the pre-turn snapshot.
 
