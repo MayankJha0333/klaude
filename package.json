@@ -2,8 +2,10 @@
   "name": "klaude",
   "displayName": "Klaude",
   "description": "Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.",
-  "version": "0.1.0",
-  "publisher": "klaude",
+  "version": "0.1.1",
+  "publisher": "LinkInsightLab",
+  "license": "MIT",
+  "icon": "assets/icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -12,6 +14,20 @@
     "Programming Languages",
     "Other"
   ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "ai",
+    "agent",
+    "coding assistant",
+    "anthropic",
+    "copilot",
+    "chat"
+  ],
+  "galleryBanner": {
+    "color": "#4F46E5",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/MayankJha0333/klaude.git"
@@ -142,6 +158,9 @@
     "build": "node esbuild.config.mjs && npm --prefix webview run build",
     "watch": "node esbuild.config.mjs --watch",
     "package": "vsce package",
+    "package:targets": "bash scripts/build-targets.sh",
+    "publish:vsce": "bash scripts/publish-targets.sh",
+    "publish:ovsx": "bash scripts/publish-openvsx.sh",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
@@ -153,6 +172,7 @@
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.24.0",
+    "ovsx": "^0.10.12",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }

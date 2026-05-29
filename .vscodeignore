@@ -11,3 +11,10 @@ esbuild.config.mjs
 tsconfig.json
 vitest.config.*
 .gitignore
+.claude/**
+*.vsix
+package-lock.json
+scripts/**
+dist-vsix/**
+node_modules/.bin/**
+node_modules/@anthropic-ai/claude-code-*/**

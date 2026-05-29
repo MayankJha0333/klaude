@@ -2,7 +2,7 @@
 
 **Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.**
 
-Klaude brings the full Claude Code agent into a native VS Code side panel: streaming chat, multi-file edits with inline diff previews, terminal execution under a permission gate, plan-mode review with inline comments, and the Claude Code Skills marketplace — all driven by your existing **Claude.ai Pro / Team / Enterprise** subscription. No per-token billing, no separate API key.
+Klaude brings the full Claude Code agent into a native VS Code side panel: streaming chat, multi-file edits with inline diff previews, terminal execution under a permission gate, plan-mode review with inline comments, and the Claude Code Skills marketplace — all driven by your existing **Claude.ai Pro / Team / Enterprise** subscription. No per-tn billing, no separate API key.
 
 ![Welcome](assets/welcome.png)
 
