@@ -1,10 +1,23 @@
-# Klaude
+<p align="center">
+  <img src="assets/klaude-lockup.png" width="440" alt="Klaude — Agentic coding for VS Code" />
+</p>
 
-**Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.**
+<p align="center"><strong>Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.</strong></p>
 
-Klaude brings the full Claude Code agent into a native VS Code side panel: streaming chat, multi-file edits with inline diff previews, terminal execution under a permission gate, plan-mode review with inline comments, and the Claude Code Skills marketplace — all driven by your existing **Claude.ai Pro / Team / Enterprise** subscription. No per-tn billing, no separate API key.
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=LinkInsightLab.klaude"><img src="https://img.shields.io/visual-studio-marketplace/v/LinkInsightLab.klaude?label=VS%20Code%20Marketplace&logo=visualstudiocode&color=4F46E5" alt="VS Code Marketplace version" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=LinkInsightLab.klaude"><img src="https://img.shields.io/visual-studio-marketplace/i/LinkInsightLab.klaude?label=installs&color=4F46E5" alt="Installs" /></a>
+  <a href="https://open-vsx.org/extension/LinkInsightLab/klaude"><img src="https://img.shields.io/open-vsx/v/LinkInsightLab/klaude?label=Open%20VSX&color=c160ef" alt="Open VSX version" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT" /></a>
+</p>
 
-![Welcome](assets/welcome.png)
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=LinkInsightLab.klaude">Marketplace</a> ·
+  <a href="https://open-vsx.org/extension/LinkInsightLab/klaude">Open VSX</a> ·
+  <a href="https://github.com/MayankJha0333/klaude/issues">Issues</a>
+</p>
+
+Klaude brings the full Claude Code agent into a native VS Code side panel: streaming chat, multi-file edits with inline diff previews, terminal execution under a permission gate, plan-mode review with inline comments, and the Claude Code Skills marketplace — all driven by your existing **Claude.ai Pro / Team / Enterprise** subscription. No per-token billing, no separate API key.
 
 ---
 
@@ -25,10 +38,16 @@ Klaude brings the full Claude Code agent into a native VS Code side panel: strea
 
 ### 1. Install
 
-Search **Klaude** in the VS Code marketplace, or install the `.vsix` directly:
+Search **Klaude** in the VS Code Marketplace (VS Code) or the Open VSX Registry (Cursor / VSCodium / Windsurf), or install from the command line:
 
 ```bash
-code --install-extension klaude-0.1.0.vsix
+code --install-extension LinkInsightLab.klaude
+```
+
+You can also install a downloaded `.vsix` directly:
+
+```bash
+code --install-extension klaude-0.1.1.vsix
 ```
 
 ### 2. Sign in
@@ -171,7 +190,8 @@ npm run lint   # tsc --noEmit
 ### Packaging
 
 ```bash
-npm run package   # → klaude-0.1.0.vsix
+npm run package          # → single .vsix for the current platform
+npm run package:targets  # → all 8 platform-specific .vsix files in dist-vsix/
 ```
 
 ---

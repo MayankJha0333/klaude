@@ -5,7 +5,7 @@
   "version": "0.1.1",
   "publisher": "LinkInsightLab",
   "license": "MIT",
-  "icon": "assets/icon.png",
+  "icon": "assets/klaude-icon-512.png",
   "engines": {
     "vscode": "^1.90.0"
   },

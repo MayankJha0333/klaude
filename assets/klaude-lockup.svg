@@ -1,0 +1,21 @@
+<svg width="900" height="280" viewBox="0 0 900 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Klaude">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E08A68"/>
+      <stop offset="1" stop-color="#C75C39"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(40,40) scale(0.39)">
+    <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#tile)"/>
+    <g fill="none" stroke="#FBF3E9" stroke-width="54" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M170 160 L170 352"/>
+      <path d="M170 256 L292 186"/>
+      <path d="M170 256 L320 352"/>
+    </g>
+    <path fill="#FBF3E9" d="M326 92 C338 150 360 172 418 184 C360 196 338 218 326 276 C314 218 292 196 234 184 C292 172 314 150 326 92 Z"/>
+  </g>
+
+  <text x="265" y="150" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="118" font-weight="600" letter-spacing="-3" fill="#2A2320">Klaude</text>
+  <text x="268" y="208" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="33" font-weight="400" letter-spacing="1.5" fill="#8A6F5E">Agentic coding for VS Code</text>
+</svg>
