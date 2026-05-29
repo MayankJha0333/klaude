@@ -103,10 +103,10 @@ export function EditConfirmModal({
           </button>
           <button
             type="button"
-            className="px-3.5 py-1.5 rounded-md bg-accent border border-accent-mid text-white text-[12px] font-semibold font-[inherit] cursor-pointer transition-colors duration-[120ms] hover:bg-accent-deep"
+            className="px-3.5 py-1.5 rounded-md bg-accent border border-accent-mid text-on-accent text-[12px] font-semibold font-[inherit] cursor-pointer transition-colors duration-[120ms] hover:bg-accent-deep"
             onClick={onRevert}
           >
-            Revert <span className="ml-1.5 text-[11px] font-mono text-white/85 font-medium">↵</span>
+            Revert <span className="ml-1.5 text-[11px] font-mono text-on-accent/85 font-medium">↵</span>
           </button>
         </div>
       </motion.div>

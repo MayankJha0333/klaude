@@ -5,9 +5,9 @@
 <p align="center"><strong>Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.</strong></p>
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=LinkInsightLab.klaude"><img src="https://img.shields.io/visual-studio-marketplace/v/LinkInsightLab.klaude?label=VS%20Code%20Marketplace&logo=visualstudiocode&color=4F46E5" alt="VS Code Marketplace version" /></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=LinkInsightLab.klaude"><img src="https://img.shields.io/visual-studio-marketplace/i/LinkInsightLab.klaude?label=installs&color=4F46E5" alt="Installs" /></a>
-  <a href="https://open-vsx.org/extension/LinkInsightLab/klaude"><img src="https://img.shields.io/open-vsx/v/LinkInsightLab/klaude?label=Open%20VSX&color=c160ef" alt="Open VSX version" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=LinkInsightLab.klaude"><img src="https://img.shields.io/visual-studio-marketplace/v/LinkInsightLab.klaude?label=VS%20Code%20Marketplace&logo=visualstudiocode&color=d37350" alt="VS Code Marketplace version" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=LinkInsightLab.klaude"><img src="https://img.shields.io/visual-studio-marketplace/i/LinkInsightLab.klaude?label=installs&color=d37350" alt="Installs" /></a>
+  <a href="https://open-vsx.org/extension/LinkInsightLab/klaude"><img src="https://img.shields.io/open-vsx/v/LinkInsightLab/klaude?label=Open%20VSX&color=d37350" alt="Open VSX version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT" /></a>
 </p>
 

@@ -83,7 +83,7 @@ export function KeyboardHints({ onClose }: { onClose: () => void }) {
               className="w-7 h-7 rounded-lg inline-flex items-center justify-center border border-accent-mid"
               style={{
                 background:
-                  "linear-gradient(135deg, var(--accent-soft), rgba(99,102,241,0.04))",
+                  "linear-gradient(135deg, var(--accent-soft), rgba(211,115,80,0.04))",
                 color: "var(--accent-glow)",
                 boxShadow: "0 2px 10px var(--accent-shadow)"
               }}

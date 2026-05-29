@@ -58,7 +58,7 @@ export function RewindModal({ messagesAfter, onCancel, onConfirm }: RewindModalP
           </button>
           <button
             type="button"
-            className="px-3.5 py-1.5 rounded-md bg-accent border border-accent-mid text-white text-[12px] font-semibold font-[inherit] cursor-pointer transition-colors duration-[120ms] hover:bg-accent-deep"
+            className="px-3.5 py-1.5 rounded-md bg-accent border border-accent-mid text-on-accent text-[12px] font-semibold font-[inherit] cursor-pointer transition-colors duration-[120ms] hover:bg-accent-deep"
             onClick={onConfirm}
             autoFocus
           >

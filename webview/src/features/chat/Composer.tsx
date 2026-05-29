@@ -354,7 +354,7 @@ export function Composer({
       {dropping && (
         <div
           className="absolute inset-0 z-30 rounded-xl border-2 border-dashed border-accent flex items-center justify-center pointer-events-none"
-          style={{ background: "rgba(99,102,241,0.08)" }}
+          style={{ background: "rgba(211,115,80,0.08)" }}
         >
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-s1 border border-accent-mid text-[12px] text-accent-glow font-semibold">
             <Icon name="attach" size={13} />
@@ -662,4 +662,4 @@ const MODE_BTN =
   "inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-transparent border border-b1 text-t2 text-[11px] font-semibold font-[inherit] cursor-pointer transition-colors hover:bg-s3 hover:text-t1 hover:border-b3";
 
 const SEND_BTN =
-  "inline-flex items-center justify-center w-8 h-8 rounded-md bg-accent text-white border-0 cursor-pointer transition-all duration-150 shadow-[0_2px_10px_var(--accent-shadow)] hover:not-[:disabled]:bg-accent-deep hover:not-[:disabled]:-translate-y-px disabled:opacity-45 disabled:cursor-not-allowed disabled:shadow-none";
+  "inline-flex items-center justify-center w-8 h-8 rounded-md bg-accent text-on-accent border-0 cursor-pointer transition-all duration-150 shadow-[0_2px_10px_var(--accent-shadow)] hover:not-[:disabled]:bg-accent-deep hover:not-[:disabled]:-translate-y-px disabled:opacity-45 disabled:cursor-not-allowed disabled:shadow-none";

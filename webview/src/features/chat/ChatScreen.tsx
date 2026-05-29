@@ -426,7 +426,7 @@ export function ChatScreen({
           <motion.button
             key="scroll-bottom"
             type="button"
-            className="absolute right-[18px] bottom-[140px] w-9 h-9 rounded-full bg-accent text-white border-0 cursor-pointer font-[inherit] z-[5] flex items-center justify-center"
+            className="absolute right-[18px] bottom-[140px] w-9 h-9 rounded-full bg-accent text-on-accent border-0 cursor-pointer font-[inherit] z-[5] flex items-center justify-center"
             style={{
               boxShadow:
                 "0 4px 18px var(--accent-shadow), 0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.08) inset"

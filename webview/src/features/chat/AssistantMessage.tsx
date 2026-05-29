@@ -38,7 +38,7 @@ export function AssistantMessage({
     >
       {showAvatar && (
         <motion.div
-          className="flex-shrink-0 w-[26px] h-[26px] rounded-lg flex items-center justify-center text-[10.5px] font-bold tracking-[0.05em] mt-0.5 text-white bg-gradient-to-br from-accent to-accent-deep"
+          className="flex-shrink-0 w-[26px] h-[26px] rounded-lg flex items-center justify-center text-[10.5px] font-bold tracking-[0.05em] mt-0.5 text-on-accent bg-gradient-to-br from-accent to-accent-deep"
           style={{ boxShadow: "0 2px 12px var(--accent-shadow)" }}
           animate={
             streaming ? { opacity: [0.7, 1, 0.7] } : { opacity: 1 }

@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Icon } from "../../design/icons";
+import { Icon, BrandMark } from "../../design/icons";
 import { IconButton, Chip } from "../../design/primitives";
 import { send, ConventionsSource, TimelineEvent } from "../../lib/rpc";
 import { findMode } from "./constants";
@@ -50,17 +50,16 @@ export function Header({
     >
       <div className="flex items-center gap-2 flex-wrap min-w-0">
         <motion.div
-          className="w-[24px] h-[24px] rounded-[8px] inline-flex items-center justify-center text-white flex-shrink-0 relative"
+          className="w-[24px] h-[24px] rounded-[8px] inline-flex items-center justify-center text-on-accent flex-shrink-0 relative"
           style={{
-            background:
-              "conic-gradient(from 180deg, var(--accent), var(--accent-glow), var(--accent))",
-            boxShadow: "0 1px 10px var(--accent-shadow), 0 0 0 1px rgba(255,255,255,0.06) inset"
+            background: "var(--brand-tile-gradient)",
+            boxShadow: "0 1px 10px var(--accent-shadow), 0 0 0 1px rgba(255,255,255,0.08) inset"
           }}
           aria-hidden
-          whileHover={{ scale: 1.06, rotate: 12 }}
+          whileHover={{ scale: 1.08 }}
           transition={{ type: "spring", stiffness: 360, damping: 18 }}
         >
-          <Icon name="sparkle" size={12} />
+          <BrandMark size={17} />
         </motion.div>
         <span className="font-bold text-[13.5px] tracking-[-0.3px] text-t1 flex-shrink-0">
           Klaude

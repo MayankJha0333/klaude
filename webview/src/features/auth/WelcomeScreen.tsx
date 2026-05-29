@@ -15,7 +15,7 @@
 import { KeyboardEvent, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Orb, Spinner } from "../../design/primitives";
-import { Icon } from "../../design/icons";
+import { Icon, BrandMark } from "../../design/icons";
 import { send, onMessage } from "../../lib/rpc";
 
 type SetupStage =
@@ -97,13 +97,13 @@ export function WelcomeScreen() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Ambient indigo glow */}
+      {/* Ambient copper glow */}
       <div
         className="pointer-events-none absolute inset-0 opacity-60"
         aria-hidden
         style={{
           background:
-            "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(99,102,241,0.12), transparent 70%)"
+            "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(211,115,80,0.12), transparent 70%)"
         }}
       />
 
@@ -137,15 +137,14 @@ export function WelcomeScreen() {
         {/* Header */}
         <div className="flex items-center gap-2 px-5 py-3 border-b border-b1 bg-s2/40">
           <div
-            className="w-6 h-6 rounded-md flex items-center justify-center text-white"
+            className="w-6 h-6 rounded-md flex items-center justify-center text-on-accent"
             style={{
-              background:
-                "conic-gradient(from 180deg, var(--accent), var(--accent-glow), var(--accent))",
+              background: "var(--brand-tile-gradient)",
               boxShadow: "0 1px 6px var(--accent-shadow)"
             }}
             aria-hidden
           >
-            <Icon name="sparkle" size={11} />
+            <BrandMark size={15} />
           </div>
           <span className="text-[13px] font-bold tracking-[-0.2px] text-t1">
             Sign in with Claude.ai Subscription
@@ -167,7 +166,7 @@ export function WelcomeScreen() {
                 <button
                   type="button"
                   onClick={handleAutoSignIn}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-accent text-white border-0 px-3 py-[12px] rounded-lg cursor-pointer text-[13.5px] font-bold tracking-[-0.1px] transition-all duration-150 font-[inherit] hover:bg-accent-deep hover:-translate-y-px"
+                  className="w-full inline-flex items-center justify-center gap-2 bg-accent text-on-accent border-0 px-3 py-[12px] rounded-lg cursor-pointer text-[13.5px] font-bold tracking-[-0.1px] transition-all duration-150 font-[inherit] hover:bg-accent-deep hover:-translate-y-px"
                   style={{ boxShadow: "0 4px 18px var(--accent-shadow)" }}
                 >
                   <Icon name="sparkle" size={13} />
@@ -198,7 +197,7 @@ export function WelcomeScreen() {
                     <button
                       type="button"
                       onClick={handleConfirmSignedIn}
-                      className="w-full bg-accent text-white border-0 px-3 py-2 rounded-lg cursor-pointer text-[12.5px] font-bold transition-all duration-150 font-[inherit] hover:bg-accent-deep"
+                      className="w-full bg-accent text-on-accent border-0 px-3 py-2 rounded-lg cursor-pointer text-[12.5px] font-bold transition-all duration-150 font-[inherit] hover:bg-accent-deep"
                       style={{ boxShadow: "0 2px 10px var(--accent-shadow)" }}
                     >
                       I've signed in — continue
@@ -251,7 +250,7 @@ export function WelcomeScreen() {
                 <button
                   type="button"
                   onClick={handleAutoSignIn}
-                  className="w-full bg-accent text-white border-0 px-3 py-[11px] rounded-lg cursor-pointer text-[13px] font-bold tracking-[-0.1px] transition-all duration-150 font-[inherit] hover:bg-accent-deep mb-2"
+                  className="w-full bg-accent text-on-accent border-0 px-3 py-[11px] rounded-lg cursor-pointer text-[13px] font-bold tracking-[-0.1px] transition-all duration-150 font-[inherit] hover:bg-accent-deep mb-2"
                   style={{ boxShadow: "0 2px 12px var(--accent-shadow)" }}
                 >
                   Try again
@@ -322,7 +321,7 @@ export function WelcomeScreen() {
                 type="button"
                 onClick={handleManualSubmit}
                 disabled={!manualValid || manualSubmitting}
-                className="w-full mt-3 bg-accent text-white border-0 px-3 py-[10px] rounded-lg cursor-pointer text-[12.5px] font-bold transition-all duration-150 font-[inherit] hover:not-[:disabled]:bg-accent-deep disabled:opacity-45 disabled:cursor-not-allowed"
+                className="w-full mt-3 bg-accent text-on-accent border-0 px-3 py-[10px] rounded-lg cursor-pointer text-[12.5px] font-bold transition-all duration-150 font-[inherit] hover:not-[:disabled]:bg-accent-deep disabled:opacity-45 disabled:cursor-not-allowed"
               >
                 {manualSubmitting ? "Signing in…" : "Sign in with token"}
               </button>

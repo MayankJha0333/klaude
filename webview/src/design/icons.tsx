@@ -80,3 +80,35 @@ export function Icon({ name, size = 14, strokeWidth = 1.6, className, style, tit
     </svg>
   );
 }
+
+// ─────────────────────────────────────────────────────────────
+// BrandMark — the Klaude "K" + sparkle glyph, traced 1:1 from the
+// brand lockup (assets/klaude-lockup.svg). Drawn in currentColor so
+// it inherits the cream (--on-accent) set on the copper tile that
+// hosts it. Renders the glyph only; the copper tile is the parent's
+// background. Use inside the header logo and any brand chrome.
+// ─────────────────────────────────────────────────────────────
+
+export function BrandMark({ size = 14, className, style }: { size?: number; className?: string; style?: CSSProperties }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      fill="none"
+      style={style}
+      aria-hidden
+    >
+      <g stroke="currentColor" strokeWidth={54} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M170 160 L170 352" />
+        <path d="M170 256 L292 186" />
+        <path d="M170 256 L320 352" />
+      </g>
+      <path
+        fill="currentColor"
+        d="M326 92 C338 150 360 172 418 184 C360 196 338 218 326 276 C314 218 292 196 234 184 C292 172 314 150 326 92 Z"
+      />
+    </svg>
+  );
+}

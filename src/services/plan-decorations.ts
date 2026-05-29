@@ -24,12 +24,12 @@ export class PlanDecorationService {
   });
 
   private activeStepDeco = vscode.window.createTextEditorDecorationType({
-    backgroundColor: "rgba(99, 102, 241, 0.12)",
-    borderColor: "#6366f1",
+    backgroundColor: "rgba(211, 115, 80, 0.12)",
+    borderColor: "#d37350",
     borderStyle: "solid",
     borderWidth: "0 0 0 3px",
     isWholeLine: true,
-    overviewRulerColor: "#6366f1",
+    overviewRulerColor: "#d37350",
     overviewRulerLane: vscode.OverviewRulerLane.Left
   });
 

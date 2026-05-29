@@ -115,10 +115,10 @@ function Suggestion({ item, delay }: { item: SuggestionItem; delay: number }) {
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.28, ease: "easeOut" }}
-      className="group relative flex items-center gap-3 px-3.5 py-3 rounded-xl border border-b1 bg-gradient-to-br from-s1 to-s2/40 cursor-pointer text-left font-[inherit] text-t1 transition-[transform,border-color,background,box-shadow] duration-150 hover:border-accent-mid hover:from-accent-soft hover:to-accent-soft/30 hover:-translate-y-px hover:shadow-[0_4px_18px_rgba(99,102,241,0.16)]"
+      className="group relative flex items-center gap-3 px-3.5 py-3 rounded-xl border border-b1 bg-gradient-to-br from-s1 to-s2/40 cursor-pointer text-left font-[inherit] text-t1 transition-[transform,border-color,background,box-shadow] duration-150 hover:border-accent-mid hover:from-accent-soft hover:to-accent-soft/30 hover:-translate-y-px hover:shadow-[0_4px_18px_rgba(211,115,80,0.16)]"
       onClick={() => send({ type: "prompt", text: item.prompt })}
     >
-      <span className="w-[32px] h-[32px] rounded-lg inline-flex items-center justify-center flex-shrink-0 bg-s2 text-accent transition-all duration-150 border border-b1 group-hover:bg-accent group-hover:border-accent group-hover:text-white group-hover:shadow-[0_2px_12px_var(--accent-shadow)]">
+      <span className="w-[32px] h-[32px] rounded-lg inline-flex items-center justify-center flex-shrink-0 bg-s2 text-accent transition-all duration-150 border border-b1 group-hover:bg-accent group-hover:border-accent group-hover:text-on-accent group-hover:shadow-[0_2px_12px_var(--accent-shadow)]">
         <Icon name={item.icon} size={15} />
       </span>
       <span className="flex-1 min-w-0">

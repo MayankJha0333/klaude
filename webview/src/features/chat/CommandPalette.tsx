@@ -338,7 +338,7 @@ function PaletteRow({
         className={[
           "w-7 h-7 rounded-md inline-flex items-center justify-center flex-shrink-0 transition-colors",
           active
-            ? "bg-accent text-white"
+            ? "bg-accent text-on-accent"
             : "bg-s2 text-t3 border border-b1"
         ].join(" ")}
       >

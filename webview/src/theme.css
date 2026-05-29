@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    Klaude — Forge Premium theme
-   Dark-first, warm charcoal surfaces, indigo accent, luminous glow.
+   Dark-first, warm charcoal surfaces, copper accent (matched to the
+   Klaude brand mark), luminous glow.
 
    Tailwind v4 is layered on top via @import "tailwindcss" — the
    @theme block bridges this design-system's CSS variables to
@@ -36,6 +37,7 @@
   --color-accent-glow: var(--accent-glow);
   --color-accent-soft: var(--accent-soft);
   --color-accent-mid: var(--accent-mid);
+  --color-on-accent: var(--on-accent);
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
   --color-warn: var(--warn);
@@ -71,13 +73,24 @@
   --t3: #7a7a82;
   --t4: #4a4a52;
 
-  /* Accent — indigo retained for brand identity, used sparingly */
-  --accent: #6366f1;
-  --accent-deep: #4338ca;
-  --accent-glow: #a5b4fc;
-  --accent-soft: rgba(99, 102, 241, 0.11);
-  --accent-mid: rgba(99, 102, 241, 0.2);
-  --accent-shadow: rgba(99, 102, 241, 0.35);
+  /* Accent — copper/terracotta, matched to the Klaude brand mark.
+     Tile gradient runs #E08A68 (top) → #C75C39 (bottom); the cream
+     glyph is #FBF3E9. `--accent` is the gradient midpoint so it reads
+     as the signature brand copper; rgba tints share its rgb (211,115,80)
+     so soft/mid/shadow stay perfectly in hue. */
+  --accent: #d37350;
+  --accent-deep: #c75c39;
+  --accent-glow: #edab8a;
+  --accent-soft: rgba(211, 115, 80, 0.12);
+  --accent-mid: rgba(211, 115, 80, 0.22);
+  --accent-shadow: rgba(211, 115, 80, 0.38);
+  /* Glyph/label color that sits on a copper accent fill — the brand cream
+     (warmer and softer than pure white, exactly as the K-mark is drawn). */
+  --on-accent: #fbf3e9;
+  --ink: #fbf3e9;
+  /* The brand tile — exact gradient of the Klaude app icon. Referenced by
+     the header + welcome logo tiles so the brand mark stays in one place. */
+  --brand-tile-gradient: linear-gradient(160deg, #e08a68, #c75c39);
 
   /* Semantic */
   --ok: #4ade80;
@@ -217,9 +230,9 @@ html, body, #root {
 .hdr-right { display: flex; gap: 2px; flex-shrink: 0; }
 .hdr-logo {
   width: 22px; height: 22px; border-radius: 7px;
-  background: conic-gradient(from 180deg, var(--accent), var(--accent-glow), var(--accent));
+  background: var(--brand-tile-gradient);
   display: inline-flex; align-items: center; justify-content: center;
-  color: white;
+  color: var(--on-accent);
   box-shadow: 0 1px 8px var(--accent-shadow);
   flex-shrink: 0;
 }
@@ -577,7 +590,7 @@ html, body, #root {
 }
 .suggestion:hover .suggestion-icon {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   box-shadow: 0 2px 12px var(--accent-shadow);
 }
 .suggestion-body { flex: 1; min-width: 0; }
@@ -647,7 +660,7 @@ html, body, #root {
 
 .msg-assistant .msg-avatar {
   background: linear-gradient(135deg, var(--accent), var(--accent-deep));
-  color: white;
+  color: var(--on-accent);
   box-shadow: 0 2px 12px var(--accent-shadow);
 }
 .msg-assistant.streaming .msg-avatar { animation: forgePulse 1.6s ease-in-out infinite; }
@@ -919,7 +932,7 @@ h6.md-h {
   letter-spacing: -0.1px;
   white-space: nowrap;
 }
-.md-table tbody tr:hover { background: rgba(99, 102, 241, 0.04); }
+.md-table tbody tr:hover { background: rgba(211, 115, 80, 0.05); }
 .md-table td {
   color: var(--t2);
 }
@@ -1385,7 +1398,7 @@ h6.md-h {
 .reditor[contenteditable="false"] { opacity: 0.7; cursor: not-allowed; }
 .reditor::selection,
 .reditor *::selection {
-  background: rgba(99, 102, 241, 0.32);
+  background: rgba(211, 115, 80, 0.32);
 }
 .reditor-placeholder {
   position: absolute;
@@ -1436,7 +1449,7 @@ h6.md-h {
   background: var(--accent-mid);
   border-color: var(--accent);
   color: var(--t1);
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 2px 10px rgba(211, 115, 80, 0.25);
 }
 .re-badge-icon {
   font-family: var(--font-mono);
@@ -1667,7 +1680,7 @@ h6.md-h {
   align-items: center;
   justify-content: center;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   transition: all 150ms ease;
   flex-shrink: 0;
   box-shadow: 0 2px 12px var(--accent-shadow);
@@ -1703,7 +1716,7 @@ h6.md-h {
   width: 32px; height: 32px;
   border-radius: 50%;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border: none;
   cursor: pointer;
   font-size: 14px;
@@ -1932,7 +1945,7 @@ h6.md-h {
 .modal-btn-primary {
   background: var(--accent);
   border: 1px solid transparent;
-  color: white;
+  color: var(--on-accent);
   box-shadow: 0 1px 6px var(--accent-shadow);
 }
 .modal-btn-primary:hover { background: var(--accent-deep); }
@@ -2272,7 +2285,7 @@ h6.md-h {
 .auth-primary {
   width: 100%;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border: none;
   padding: 11px;
   border-radius: 8px;
@@ -2804,7 +2817,7 @@ h6.md-h {
   color: var(--t3);
 }
 .cmp-action:hover .cmp-action-kbd {
-  background: rgba(99, 102, 241, 0.12);
+  background: rgba(211, 115, 80, 0.12);
   color: var(--accent-glow);
   border-color: var(--accent-mid);
 }
@@ -3054,7 +3067,7 @@ h6.md-h {
 }
 .market-card.installed .market-card-icon {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   box-shadow: 0 2px 10px var(--accent-shadow);
 }
 .market-card-titles { min-width: 0; }
@@ -3120,7 +3133,7 @@ h6.md-h {
 }
 .market-card-btn.primary {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border: 1px solid transparent;
   margin-left: auto;
   box-shadow: 0 1px 6px var(--accent-shadow);
@@ -3143,7 +3156,7 @@ h6.md-h {
   margin-left: auto;
 }
 .market-card-installed.scope-user {
-  background: rgba(96, 110, 230, 0.14);
+  background: rgba(211, 115, 80, 0.14);
   color: var(--accent);
 }
 .market-card-installed.scope-project {
@@ -3332,7 +3345,7 @@ h6.md-h {
 }
 .market-tab.active .market-tab-count {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 /* Tighten card actions on narrower modals — stack instead of squashing. */
@@ -3563,7 +3576,7 @@ h6.md-h {
 .plan-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .plan-btn-primary {
   background: linear-gradient(180deg, var(--accent), var(--accent-deep));
-  color: white;
+  color: var(--on-accent);
   border-color: var(--accent-deep);
   box-shadow: 0 2px 8px var(--accent-shadow);
 }
@@ -4275,7 +4288,7 @@ h6.md-h {
   border: 1px solid var(--accent-mid);
   border-radius: 9px;
   padding: 12px 13px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(211, 115, 80, 0.15);
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -4903,7 +4916,7 @@ ol .plan-inline-thread-slot {
 .plan-inline-thread.replying {
   border-color: var(--accent-mid);
   border-left-color: var(--accent);
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.18);
+  box-shadow: 0 4px 14px rgba(211, 115, 80, 0.18);
 }
 .plan-inline-thread.resolved {
   opacity: 0.78;

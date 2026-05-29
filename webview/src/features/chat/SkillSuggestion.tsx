@@ -16,7 +16,7 @@ interface SkillSuggestionProps {
 }
 
 const PRIMARY_BTN =
-  "px-2.5 py-1.5 rounded-[5px] border border-accent-mid bg-accent text-white text-[11px] font-semibold cursor-pointer font-[inherit] transition-colors hover:bg-accent-deep";
+  "px-2.5 py-1.5 rounded-[5px] border border-accent-mid bg-accent text-on-accent text-[11px] font-semibold cursor-pointer font-[inherit] transition-colors hover:bg-accent-deep";
 const GHOST_BTN =
   "px-2.5 py-1.5 rounded-[5px] border border-transparent bg-transparent text-t2 text-[11px] cursor-pointer font-[inherit] transition-colors hover:text-t1 hover:bg-s2";
 

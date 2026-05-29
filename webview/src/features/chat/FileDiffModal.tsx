@@ -139,7 +139,7 @@ export function FileDiffModal({ entry, onClose, originRect, onAddNote }: FileDif
               className="w-9 h-9 rounded-lg inline-flex items-center justify-center flex-shrink-0 border border-accent-mid"
               style={{
                 background:
-                  "linear-gradient(135deg, var(--accent-soft), rgba(99,102,241,0.05))",
+                  "linear-gradient(135deg, var(--accent-soft), rgba(211,115,80,0.05))",
                 color: ext.color ?? "var(--accent-glow)",
                 boxShadow: "0 2px 14px var(--accent-shadow)"
               }}
@@ -290,7 +290,7 @@ export function FileDiffModal({ entry, onClose, originRect, onAddNote }: FileDif
                     });
                     setNoteFor(null);
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-accent text-white border-0 cursor-pointer font-[inherit] text-[11px] font-semibold transition-colors hover:bg-accent-deep disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-accent text-on-accent border-0 cursor-pointer font-[inherit] text-[11px] font-semibold transition-colors hover:bg-accent-deep disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Add to next prompt
                 </button>
@@ -387,7 +387,7 @@ function EmptyDiff({ path }: { path: string }) {
       <button
         type="button"
         onClick={() => send({ type: "openFile", path })}
-        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white border-0 cursor-pointer font-[inherit] text-[11.5px] font-semibold transition-colors hover:bg-accent-deep"
+        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-on-accent border-0 cursor-pointer font-[inherit] text-[11.5px] font-semibold transition-colors hover:bg-accent-deep"
       >
         <Icon name="arrow" size={11} />
         Open file

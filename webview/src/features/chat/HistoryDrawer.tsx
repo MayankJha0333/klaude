@@ -103,7 +103,7 @@ export function HistoryDrawer({ open, onClose, onSelect }: HistoryDrawerProps) {
                   className="w-7 h-7 rounded-lg inline-flex items-center justify-center"
                   style={{
                     background:
-                      "linear-gradient(135deg, var(--accent-soft), rgba(99,102,241,0.04))",
+                      "linear-gradient(135deg, var(--accent-soft), rgba(211,115,80,0.04))",
                     border: "1px solid var(--accent-mid)",
                     color: "var(--accent-glow)",
                     boxShadow: "0 2px 10px var(--accent-shadow)"
