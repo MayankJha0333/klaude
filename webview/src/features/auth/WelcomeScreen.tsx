@@ -119,7 +119,7 @@ export function WelcomeScreen() {
           Welcome to Klaude
         </h1>
         <p className="text-[13px] text-t3 m-0 leading-[1.55] max-w-[320px]">
-          Agentic coding for VS Code — powered by your Claude subscription.
+          Agentic coding for VS Code — powered by your Claude Code subscription.
         </p>
       </motion.div>
 

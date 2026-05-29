@@ -1,6 +1,6 @@
 {
   "name": "klaude",
-  "displayName": "Klaude",
+  "displayName": "Klaude — Claude Code for VS Code",
   "description": "Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.",
   "version": "0.1.1",
   "publisher": "LinkInsightLab",

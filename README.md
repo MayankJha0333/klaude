@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/klaude-lockup.png" width="440" alt="Klaude — Agentic coding for VS Code" />
+  <img src="assets/klaude-lockup.png" width="440" alt="Klaude — Claude Code for VS Code" />
 </p>
 
 <p align="center"><strong>Agentic AI coding assistant for VS Code — powered by your Claude Code subscription.</strong></p>
