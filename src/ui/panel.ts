@@ -38,6 +38,10 @@ import {
   disconnect as mcpDisconnect,
   addCustom as mcpAddCustom,
   removeCustom as mcpRemoveCustom,
+  removeManaged as mcpRemoveManaged,
+  connectWithApiKey as mcpConnectWithApiKey,
+  refreshManagedConnectors as mcpRefreshManaged,
+  refreshClaudeCodeStatus as mcpRefreshCliStatus,
   writeCliMcpConfig,
   OAuthCancelled as McpOAuthCancelled,
   CustomDraft as McpCustomDraft
@@ -963,6 +967,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         break;
       case "requestConnectors":
         this.broadcastConnectors();
+        // Then fetch tool counts for Claude-Code-managed servers (figma, etc.)
+        // using their stored credentials, and re-broadcast so their cards fill
+        // in. Best-effort + cached, so reopening the panel is cheap.
+        void this.refreshManagedAndRebroadcast();
         break;
       case "connectorConnect":
         if (typeof msg.id === "string") {
@@ -989,6 +997,16 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           await this.handleConnectorRemoveCustom(msg.id);
         }
         break;
+      case "connectorSetupViaClaudeCode":
+        if (typeof msg.id === "string") {
+          await this.handleConnectorSetupViaClaudeCode(msg.id);
+        }
+        break;
+      case "connectorConnectWithApiKey":
+        if (typeof msg.id === "string" && typeof msg.apiKey === "string") {
+          await this.handleConnectorConnectWithApiKey(msg.id, msg.apiKey);
+        }
+        break;
     }
   }
 
@@ -1004,6 +1022,39 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         message: `Couldn't list connectors: ${err instanceof Error ? err.message : String(err)}`
       });
     }
+  }
+
+  /** Fetch tool counts for Claude-Code-managed servers, then re-broadcast so
+   *  their cards show "N tools". Best-effort — failures cache as a card error. */
+  private async refreshManagedAndRebroadcast(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // Fetch managed tool counts and the `claude mcp list` status (which is the
+    // only source for claude.ai connector connection state) in parallel, then
+    // re-broadcast so e.g. a Figma the user authorized via Claude Code flips to
+    // connected here.
+    await Promise.allSettled([
+      mcpRefreshManaged(),
+      mcpRefreshCliStatus(resolveClaudeBinary(), cwd)
+    ]);
+    this.broadcastConnectors();
+  }
+
+  /** Connect a local API-token preset (e.g. Figma's figma-developer-mcp): store
+   *  the token in SecretStorage and spawn the server — no OAuth, fully local. */
+  private async handleConnectorConnectWithApiKey(id: string, apiKey: string): Promise<void> {
+    try {
+      const connector = await mcpConnectWithApiKey(this.ctx, id, apiKey);
+      this.post({ type: "connectorResult", action: "connect", id, ok: true, connector });
+    } catch (err) {
+      this.post({
+        type: "connectorResult",
+        action: "connect",
+        id,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+    this.broadcastConnectors();
   }
 
   private async handleConnectorConnect(id: string): Promise<void> {
@@ -1079,7 +1130,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private async handleConnectorRemoveCustom(id: string): Promise<void> {
     try {
-      await mcpRemoveCustom(this.ctx, id);
+      if (id.startsWith("managed:")) {
+        // Claude-Code-managed server → remove from the user's config via the
+        // supported `claude mcp remove` command (run in the workspace so
+        // local/project scopes resolve correctly).
+        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        await mcpRemoveManaged(id, resolveClaudeBinary(), cwd);
+      } else {
+        await mcpRemoveCustom(this.ctx, id);
+      }
       this.post({ type: "connectorResult", action: "remove", id, ok: true });
     } catch (err) {
       this.post({
@@ -1090,6 +1149,37 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         error: err instanceof Error ? err.message : String(err)
       });
     }
+    this.broadcastConnectors();
+  }
+
+  /**
+   * Launch the Claude Code MCP auth flow for a connector that can't be OAuth'd
+   * directly (e.g. Figma — the vendor only allows Claude Code's pre-registered
+   * client). We can't complete the OAuth headlessly, so we drive Claude Code's
+   * own `/mcp` flow for the user: clear any stale error, open `claude` in an
+   * integrated terminal, and drop into `/mcp` once it boots. After the user
+   * authorizes in the browser, the connector loads automatically (Klaude
+   * imports it as a managed card on the next list).
+   */
+  private async handleConnectorSetupViaClaudeCode(id: string): Promise<void> {
+    // Wipe the stale OAuth/DCR error record so the card stops showing 403.
+    try {
+      await mcpDisconnect(this.ctx, id);
+    } catch {
+      // best-effort
+    }
+    const existing = vscode.window.terminals.find((t) => t.name === "Klaude Setup");
+    existing?.dispose();
+    const term = vscode.window.createTerminal({ name: "Klaude Setup" });
+    term.show(true);
+    // Start the Claude Code TUI, then drop into the MCP connector menu. The
+    // second send is delayed so the TUI has booted and is reading stdin (if the
+    // timing is off the user just types `/mcp` themselves — the card says so).
+    setTimeout(() => term.sendText("claude", true), 300);
+    setTimeout(() => term.sendText("/mcp", true), 4000);
+    vscode.window.showInformationMessage(
+      "Opened Claude Code — choose your connector in the /mcp menu and authorize it in the browser. It'll appear in Klaude once connected."
+    );
     this.broadcastConnectors();
   }
 

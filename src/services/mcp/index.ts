@@ -20,7 +20,11 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import * as vscode from "vscode";
+
+const execFileAsync = promisify(execFile);
 import { CURATED_CATALOG, CatalogEntry } from "./catalog.js";
 import {
   ConnectionRecord,
@@ -43,7 +47,15 @@ import {
 import { performOAuth, refreshAccessToken, OAuthCancelled } from "./oauth.js";
 import { McpClient } from "./client.js";
 import { StdioMcpClient } from "./stdio-client.js";
-import { loadManagedServers, ManagedScope } from "./cli-config.js";
+import {
+  loadManagedServers,
+  ManagedScope,
+  ManagedServer,
+  parseClaudeMcpList,
+  endpointMatchesUrl,
+  CliMcpServer,
+  CliServerStatus
+} from "./cli-config.js";
 
 export interface ConnectorView {
   id: string;
@@ -68,6 +80,16 @@ export interface ConnectorView {
   managed?: boolean;
   /** For managed servers: which Claude Code scope they came from. */
   scope?: ManagedScope;
+  /** True when this connector can only be authenticated through Claude Code
+   *  (the vendor blocks third-party OAuth registration — e.g. Figma). */
+  requiresClaudeCodeAuth?: boolean;
+  /** For local presets that take an API token instead of OAuth — tells the UI
+   *  to prompt for `label` and connect with `connectorConnectWithApiKey`. */
+  apiKeyEnv?: { key: string; label: string; hint?: string };
+  /** True when `claude mcp list` reports this server as connected — i.e. the
+   *  user authorized it through Claude Code's `/mcp` flow. The card shows it as
+   *  connected (read-only); Claude Code owns the token. */
+  connectedViaClaudeCode?: boolean;
 }
 
 /** Merge catalog + custom + Claude-Code-managed servers into one UI list. */
@@ -99,30 +121,121 @@ export function listConnectors(ctx: vscode.ExtensionContext): ConnectorView[] {
   return [...fromCatalog, ...fromCustom, ...fromManaged];
 }
 
+/** Stable view id for an imported (Claude-Code-managed) server. */
+function managedId(scope: ManagedScope, name: string): string {
+  return `managed:${scope}:${name}`;
+}
+
+/**
+ * Ephemeral, in-memory cache of managed servers' tool lists. We fetch these on
+ * demand (the modal triggers a refresh) using the credentials Claude Code
+ * already stored, and never persist them — they hold no new secrets and a
+ * fresh fetch on the next open is cheap. Keyed by managedId.
+ */
+const managedToolCache = new Map<
+  string,
+  { tools: ConnectorTool[]; error?: string; fetchedAt: number }
+>();
+
+/**
+ * Cached `claude mcp list` result — the only source for claude.ai / plugin
+ * connector status (they aren't in ~/.claude.json). Populated by
+ * refreshClaudeCodeStatus(); read synchronously by listConnectors so a server
+ * authorized via Claude Code's `/mcp` shows as connected here.
+ */
+let cliStatusCache: { servers: CliMcpServer[]; fetchedAt: number } | null = null;
+const CLI_STATUS_TTL_MS = 45_000;
+
+/**
+ * Run `claude mcp list` and cache the parsed status. Best-effort: a non-zero
+ * exit (some server failed its health check) still prints the list, so we parse
+ * stdout off the error too. `claude mcp list` health-checks servers, so this is
+ * throttled by `CLI_STATUS_TTL_MS` unless forced.
+ */
+export async function refreshClaudeCodeStatus(
+  binary: string,
+  cwd?: string,
+  opts?: { force?: boolean }
+): Promise<void> {
+  if (
+    !opts?.force &&
+    cliStatusCache &&
+    Date.now() - cliStatusCache.fetchedAt < CLI_STATUS_TTL_MS
+  ) {
+    return;
+  }
+  const parseInto = (stdout: unknown) => {
+    if (typeof stdout === "string" && stdout) {
+      cliStatusCache = { servers: parseClaudeMcpList(stdout), fetchedAt: Date.now() };
+    }
+  };
+  try {
+    const { stdout } = await execFileAsync(binary, ["mcp", "list"], {
+      cwd,
+      timeout: 30_000,
+      maxBuffer: 4 * 1024 * 1024
+    });
+    parseInto(stdout);
+  } catch (err) {
+    parseInto((err as { stdout?: string }).stdout);
+    // else keep whatever (possibly stale) cache we had
+  }
+}
+
+/** Connection status for a connector URL per the cached `claude mcp list`. */
+function cliStatusForUrl(url?: string): CliServerStatus | null {
+  if (!url || !cliStatusCache) return null;
+  let fallback: CliServerStatus | null = null;
+  for (const s of cliStatusCache.servers) {
+    if (!endpointMatchesUrl(s.endpoint, url)) continue;
+    if (s.status === "connected") return "connected";
+    fallback = s.status;
+  }
+  return fallback;
+}
+
 /** Map Claude Code's own MCP servers into read-only connector cards. */
 function listManagedViews(): ConnectorView[] {
   const cwd = vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath;
-  return loadManagedServers(cwd).map((s) => ({
-    id: `managed:${s.scope}:${s.name}`,
-    name: s.name,
-    vendor: "Claude Code",
-    description:
-      s.transport === "stdio"
-        ? `Local command managed by Claude Code (${s.scope}).`
-        : `Remote MCP server managed by Claude Code (${s.scope}).`,
-    url: s.url,
-    transport: s.transport,
-    categories: ["claude-code", s.scope],
-    icon: s.transport === "stdio" ? "terminal" : "cloud",
-    builtIn: true,
-    // The CLI loads these for every turn, so from Klaude's vantage they're
-    // effectively always "connected".
-    status: "connected",
-    toolCount: 0,
-    command: s.transport === "stdio" ? commandLine(s.command, s.args) : undefined,
-    managed: true,
-    scope: s.scope
-  }));
+  return loadManagedServers(cwd).map((s) => {
+    const id = managedId(s.scope, s.name);
+    const cached = managedToolCache.get(id);
+    return {
+      id,
+      name: s.name,
+      // Show the real endpoint host (or "local") as the vendor so the subtitle
+      // doesn't read "Claude Code · Claude Code · …"; the managed pill already
+      // carries the "Claude Code · <scope>" label.
+      vendor: s.transport === "stdio" ? "local" : hostOf(s.url) ?? "remote",
+      description:
+        s.transport === "stdio"
+          ? `Local command managed by Claude Code (${s.scope} scope).`
+          : `Remote MCP server managed by Claude Code (${s.scope} scope).`,
+      url: s.url,
+      transport: s.transport,
+      categories: ["claude-code", s.scope],
+      icon: s.transport === "stdio" ? "terminal" : "cloud",
+      builtIn: true,
+      // The CLI loads these for every turn, so from Klaude's vantage they're
+      // effectively always "connected".
+      status: cached?.error ? "error" : "connected",
+      toolCount: cached?.tools.length ?? 0,
+      tools: cached?.tools,
+      lastError: cached?.error,
+      command: s.transport === "stdio" ? commandLine(s.command, s.args) : undefined,
+      managed: true,
+      scope: s.scope
+    };
+  });
+}
+
+function hostOf(url?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
 }
 
 function toView(
@@ -130,6 +243,12 @@ function toView(
   rec: ConnectionRecord | undefined,
   builtIn: boolean
 ): ConnectorView {
+  // If this connector is one that's authenticated through Claude Code, check
+  // whether `claude mcp list` now reports it connected (the user finished the
+  // `/mcp` flow) and flip the card to connected.
+  const ccConnected =
+    !!c.requiresClaudeCodeAuth && cliStatusForUrl(c.url) === "connected";
+
   return {
     id: c.id,
     name: c.name,
@@ -141,13 +260,24 @@ function toView(
     icon: c.icon,
     homepage: c.homepage,
     builtIn,
-    status: rec?.status ?? "disconnected",
+    // ccConnected wins; otherwise suppress a stale OAuth/DCR-403 error record on
+    // Claude-Code-auth connectors so the card shows guidance, not a red banner.
+    status: ccConnected
+      ? "connected"
+      : c.requiresClaudeCodeAuth && rec?.status === "error"
+        ? "disconnected"
+        : rec?.status ?? "disconnected",
     connectedAt: rec?.connectedAt,
     toolCount: rec?.tools?.length ?? 0,
     tools: rec?.tools,
-    lastError: rec?.lastError,
+    lastError: c.requiresClaudeCodeAuth ? undefined : rec?.lastError,
     command:
-      c.transport === "stdio" ? commandLine(c.command, c.args) : undefined
+      c.transport === "stdio" ? commandLine(c.command, c.args) : undefined,
+    // Once connected via Claude Code, drop the "set up" prompt.
+    requiresClaudeCodeAuth: c.requiresClaudeCodeAuth && !ccConnected,
+    apiKeyEnv:
+      c.apiKeyEnv && rec?.status !== "connected" ? c.apiKeyEnv : undefined,
+    connectedViaClaudeCode: ccConnected || undefined
   };
 }
 
@@ -344,6 +474,10 @@ export async function connect(
   ctx: vscode.ExtensionContext,
   id: string
 ): Promise<ConnectorView> {
+  // Managed (Claude Code) servers: no OAuth/storage — just (re)fetch their
+  // tool list using the credentials Claude Code already stored.
+  if (id.startsWith("managed:")) return connectManaged(id);
+
   const config = resolveConfig(ctx, id);
   if (!config) throw new Error(`No connector with id "${id}".`);
 
@@ -352,6 +486,131 @@ export async function connect(
     return connectStdio(ctx, id, config);
   }
   return connectRemote(ctx, id, config);
+}
+
+/**
+ * Connect a local (stdio) catalog preset that authenticates with a simple API
+ * token — e.g. the Figma `figma-developer-mcp` preset. Stores the token in the
+ * OS keychain under the connector's required env var, then spawns + handshakes.
+ * Fully local: no OAuth, no browser, no Claude Code.
+ */
+export async function connectWithApiKey(
+  ctx: vscode.ExtensionContext,
+  id: string,
+  apiKey: string
+): Promise<ConnectorView> {
+  const config = resolveConfig(ctx, id);
+  if (!config) throw new Error(`No connector with id "${id}".`);
+  if (!config.apiKeyEnv) {
+    throw new Error(`"${config.name}" doesn't use an API token.`);
+  }
+  const token = apiKey.trim();
+  if (!token) throw new Error(`${config.apiKeyEnv.label} is required.`);
+  await saveStdioEnv(ctx, id, { [config.apiKeyEnv.key]: token });
+  return connect(ctx, id);
+}
+
+// ── Managed (Claude Code) servers ───────────────────────────
+
+const MANAGED_TTL_MS = 60_000;
+
+/**
+ * Refresh the cached tool lists for every Claude-Code-managed server, using
+ * the credentials stored in the user's own config. Best-effort and parallel:
+ * a server that fails to handshake caches its error instead of throwing.
+ * Skips servers fetched within the last minute unless `force` is set.
+ */
+export async function refreshManagedConnectors(opts?: { force?: boolean }): Promise<void> {
+  const cwd = vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath;
+  const servers = loadManagedServers(cwd);
+  await Promise.allSettled(
+    servers.map(async (s) => {
+      const id = managedId(s.scope, s.name);
+      const cached = managedToolCache.get(id);
+      if (!opts?.force && cached && !cached.error && Date.now() - cached.fetchedAt < MANAGED_TTL_MS) {
+        return;
+      }
+      try {
+        const tools = await fetchManagedTools(s);
+        managedToolCache.set(id, { tools, fetchedAt: Date.now() });
+      } catch (err) {
+        managedToolCache.set(id, { tools: [], error: errMsg(err), fetchedAt: Date.now() });
+      }
+    })
+  );
+}
+
+/** (Re)fetch one managed server's tools on demand (the card's Refresh button). */
+async function connectManaged(id: string): Promise<ConnectorView> {
+  const cwd = vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath;
+  const server = loadManagedServers(cwd).find((s) => managedId(s.scope, s.name) === id);
+  if (!server) throw new Error(`No Claude Code server "${id}". It may have been removed from your config.`);
+  try {
+    const tools = await fetchManagedTools(server);
+    managedToolCache.set(id, { tools, fetchedAt: Date.now() });
+  } catch (err) {
+    managedToolCache.set(id, { tools: [], error: errMsg(err), fetchedAt: Date.now() });
+    throw err;
+  }
+  return listManagedViews().find((v) => v.id === id)!;
+}
+
+/** Handshake a managed server (remote via stored headers, or local stdio). */
+async function fetchManagedTools(server: ManagedServer): Promise<ConnectorTool[]> {
+  if (server.transport === "stdio") {
+    if (!server.command) throw new Error("Managed stdio server has no command.");
+    const client = new StdioMcpClient({
+      command: server.command,
+      args: server.args,
+      env: server.env,
+      cwd: vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath
+    });
+    return (await client.connectAndList()).tools;
+  }
+  if (!server.url) throw new Error("Managed server has no URL.");
+  const client = new McpClient({
+    url: server.url,
+    transport: server.transport === "sse" ? "sse" : "streamable-http",
+    headers: server.headers // carries the Authorization header from ~/.claude.json
+  });
+  return (await client.connectAndList()).tools;
+}
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Split a managed view id (`managed:<scope>:<name>`) back into its parts. */
+export function parseManagedId(
+  id: string
+): { scope: ManagedScope; name: string } | null {
+  const m = /^managed:(user|project|local):(.+)$/.exec(id);
+  if (!m) return null;
+  return { scope: m[1] as ManagedScope, name: m[2] };
+}
+
+/**
+ * Remove a Claude-Code-managed server from the user's config by shelling out to
+ * the supported `claude mcp remove <name> -s <scope>` command (the same one the
+ * `claude mcp get` hint suggests). `cwd` matters for local/project scope. The
+ * caller supplies the resolved `claude` binary path.
+ */
+export async function removeManaged(
+  id: string,
+  binary: string,
+  cwd?: string
+): Promise<void> {
+  const parsed = parseManagedId(id);
+  if (!parsed) throw new Error(`Not a Claude Code server id: "${id}".`);
+  try {
+    await execFileAsync(binary, ["mcp", "remove", parsed.name, "-s", parsed.scope], { cwd });
+  } catch (err) {
+    const e = err as { stderr?: string; message?: string };
+    throw new Error(
+      `Couldn't remove "${parsed.name}" (${parsed.scope}): ${(e.stderr || e.message || String(err)).trim()}`
+    );
+  }
+  managedToolCache.delete(id);
 }
 
 /** Spawn a local stdio server, handshake, list its tools, then tear it down. */
@@ -367,7 +626,10 @@ async function connectStdio(
     command: config.command,
     args: config.args,
     env: await loadStdioEnv(ctx, id),
-    cwd: vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath
+    cwd: vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath,
+    // Generous: a preset like `npx -y figma-developer-mcp` may cold-download the
+    // package on first run before it answers initialize.
+    timeoutMs: 90_000
   });
 
   let tools: ConnectorTool[] = [];
@@ -408,6 +670,18 @@ async function connectRemote(
   config: CatalogEntry
 ): Promise<ConnectorView> {
   if (!config.url) throw new Error("This connector has no URL configured.");
+
+  // Some vendors (e.g. Figma) block open OAuth client registration, so Klaude
+  // can't connect them directly — they only work via Claude Code's pre-registered
+  // client. Fail fast with guidance instead of a confusing 403 from DCR.
+  if (config.requiresClaudeCodeAuth) {
+    throw new Error(
+      `${config.name} can't be connected directly — it only allows Claude Code's ` +
+        `built-in connector. Open a terminal, run \`claude\`, type \`/mcp\`, and connect ` +
+        `${config.name} there; it then appears here automatically. (A local ${config.name} ` +
+        `MCP server also works — add one via "Add custom → Local command".)`
+    );
+  }
 
   // If a prior attempt is still pending for this connector, replace it.
   inflightConnects.get(id)?.abort();
@@ -708,7 +982,18 @@ export async function writeCliMcpConfig(
     .map((s) => cliToolNamespace(s.name))
     .filter((n) => !ownNames.has(n));
 
-  const serverNames = [...own.map((o) => o.name), ...managedNames];
+  // claude.ai / plugin connectors the user authorized through Claude Code's
+  // `/mcp` (from the cached `claude mcp list`). The CLI loads them itself; we
+  // only pre-allow their tools so they don't trip a permission prompt.
+  const cliConnectedNames = (cliStatusCache?.servers ?? [])
+    .filter((s) => s.status === "connected")
+    .map((s) => cliToolNamespace(s.name));
+
+  // dedupe: the same name can appear at multiple scopes (e.g. figma at user +
+  // local) but the CLI exposes one `mcp__<name>` namespace either way.
+  const serverNames = [
+    ...new Set([...own.map((o) => o.name), ...managedNames, ...cliConnectedNames])
+  ];
 
   if (own.length === 0) {
     // Nothing to write, but managed names may still need pre-allowing.

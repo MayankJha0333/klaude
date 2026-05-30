@@ -36,10 +36,15 @@ export interface ManagedServer {
   transport: McpTransport;
   /** Remote endpoint (http/sse). */
   url?: string;
-  /** stdio command (display only). */
+  /** Remote auth/custom headers as stored by Claude Code (contains secrets —
+   *  used to fetch the tool list, never surfaced to the webview). */
+  headers?: Record<string, string>;
+  /** stdio command. */
   command?: string;
-  /** stdio args (display only). */
+  /** stdio args. */
   args?: string[];
+  /** stdio env (contains secrets — used to spawn, never surfaced to webview). */
+  env?: Record<string, string>;
   scope: ManagedScope;
 }
 
@@ -68,30 +73,30 @@ export function parseManagedServers(input: {
   cwd?: string;
 }): ManagedServer[] {
   const { claudeJson, projectMcpJson, cwd } = input;
-  // Lowest precedence first; later writes overwrite earlier on the same name.
-  const byName = new Map<string, ManagedServer>();
+  // Keyed by `<scope>:<name>` so the SAME name at different scopes is kept as a
+  // separate entry — Claude Code can hold e.g. a broken `figma` at user scope
+  // and a working one at local scope, and the user needs to see/remove each
+  // independently (each scope is removed via `claude mcp remove -s <scope>`).
+  const byKey = new Map<string, ManagedServer>();
 
   const ingest = (servers: unknown, scope: ManagedScope) => {
     if (!servers || typeof servers !== "object") return;
     for (const [name, raw] of Object.entries(servers as Record<string, unknown>)) {
       const server = normalizeServer(name, raw as RawServerSpec, scope);
-      if (server) byName.set(name, server);
+      if (server) byKey.set(`${scope}:${name}`, server);
     }
   };
 
   const cj = asObject(claudeJson);
-  // 1. user / global
-  ingest(cj?.mcpServers, "user");
-  // 2. project (.mcp.json)
-  ingest(asObject(projectMcpJson)?.mcpServers, "project");
-  // 3. local (this project's entry inside ~/.claude.json)
+  ingest(cj?.mcpServers, "user"); // global
+  ingest(asObject(projectMcpJson)?.mcpServers, "project"); // .mcp.json
   if (cwd) {
-    const projects = asObject(cj?.projects);
-    const entry = asObject(projects?.[cwd]);
+    // local: this project's entry inside ~/.claude.json
+    const entry = asObject(asObject(cj?.projects)?.[cwd]);
     ingest(entry?.mcpServers, "local");
   }
 
-  return [...byName.values()];
+  return [...byKey.values()];
 }
 
 function normalizeServer(
@@ -108,6 +113,7 @@ function normalizeServer(
       transport: "stdio",
       command: raw.command,
       args: Array.isArray(raw.args) ? raw.args.map(String) : undefined,
+      env: isStringRecord(raw.env) ? (raw.env as Record<string, string>) : undefined,
       scope
     };
   }
@@ -118,16 +124,25 @@ function normalizeServer(
   // skip it rather than surface a phantom "connected" card the CLI won't load.
   if (typeof raw.url === "string" && raw.url) {
     const declared = (raw.type ?? raw.transport ?? "").toLowerCase();
+    const headers = isStringRecord(raw.headers)
+      ? (raw.headers as Record<string, string>)
+      : undefined;
     if (declared === "sse") {
-      return { name, transport: "sse", url: raw.url, scope };
+      return { name, transport: "sse", url: raw.url, headers, scope };
     }
     if (declared === "http" || declared === "streamable-http" || declared === "streamablehttp") {
-      return { name, transport: "streamable-http", url: raw.url, scope };
+      return { name, transport: "streamable-http", url: raw.url, headers, scope };
     }
     return null; // no recognized type — CLI wouldn't load it
   }
 
   return null; // unrecognized shape — skip rather than guess
+}
+
+/** True for a plain object whose values are all strings (headers / env maps). */
+function isStringRecord(v: unknown): v is Record<string, string> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).every((x) => typeof x === "string");
 }
 
 function asObject(v: unknown): Record<string, unknown> | undefined {
@@ -151,5 +166,61 @@ function readJsonSafe(file: string): unknown {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
     return undefined;
+  }
+}
+
+// ── `claude mcp list` status (the only place claude.ai connectors live) ──────
+//
+// claude.ai's first-party connectors (Figma, Notion, …) and plugin servers
+// aren't written to ~/.claude.json — they're synced to the user's account and
+// only surfaced via `claude mcp list`. We never read Claude Code's token store
+// (that's its job); instead we parse the supported list command's output to
+// learn which servers are connected, so a connector the user authorized through
+// Claude Code's `/mcp` flow can flip to "connected" in Klaude.
+
+export type CliServerStatus = "connected" | "needs-auth" | "pending" | "failed";
+
+export interface CliMcpServer {
+  /** Display name as printed by the CLI (e.g. "claude.ai Figma"). */
+  name: string;
+  /** URL or command string. */
+  endpoint: string;
+  status: CliServerStatus;
+}
+
+/**
+ * Parse `claude mcp list` output. Each server prints as
+ *   `<name>: <endpoint> - <status>`
+ * where status begins with a glyph (✓ Connected, ! Needs authentication, …).
+ * Header/diagnostic lines have no recognizable status and are skipped. Pure.
+ */
+export function parseClaudeMcpList(stdout: string): CliMcpServer[] {
+  const out: CliMcpServer[] = [];
+  for (const raw of stdout.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = /^(.+?):\s+(.+?)\s+-\s+(.+)$/.exec(line);
+    if (!m) continue;
+    const st = m[3].toLowerCase();
+    let status: CliServerStatus;
+    if (st.includes("✓") || /\bconnected\b/.test(st)) status = "connected";
+    else if (st.includes("needs") && st.includes("auth")) status = "needs-auth";
+    else if (st.includes("pending")) status = "pending";
+    else if (st.includes("✗") || st.includes("fail") || st.includes("error")) status = "failed";
+    else continue; // unrecognized → not a server line
+    out.push({ name: m[1].trim(), endpoint: m[2].trim(), status });
+  }
+  return out;
+}
+
+/** Does a `claude mcp list` endpoint refer to the same server as `url`? */
+export function endpointMatchesUrl(endpoint: string, url: string): boolean {
+  const clean = endpoint.replace(/\s*\((?:HTTP|SSE|stdio)\)\s*$/i, "").trim();
+  try {
+    const a = new URL(clean);
+    const b = new URL(url);
+    return a.host === b.host && a.pathname.replace(/\/+$/, "") === b.pathname.replace(/\/+$/, "");
+  } catch {
+    return clean === url;
   }
 }

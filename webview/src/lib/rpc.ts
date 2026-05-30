@@ -250,6 +250,15 @@ export interface ConnectorView {
   managed?: boolean;
   /** For managed servers: which Claude Code scope they came from. */
   scope?: "user" | "project" | "local";
+  /** True when this connector can only be set up through Claude Code (the
+   *  vendor blocks third-party OAuth registration — e.g. Figma). */
+  requiresClaudeCodeAuth?: boolean;
+  /** Local preset that authenticates with an API token — prompt for this and
+   *  connect via `connectorConnectWithApiKey`. */
+  apiKeyEnv?: { key: string; label: string; hint?: string };
+  /** True when the user authorized this through Claude Code's `/mcp` flow and
+   *  `claude mcp list` reports it connected. Read-only, owned by Claude Code. */
+  connectedViaClaudeCode?: boolean;
 }
 
 export interface CustomConnectorDraft {
@@ -362,7 +371,9 @@ export type Outbound =
   | { type: "connectorCancelConnect"; id: string }
   | { type: "connectorDisconnect"; id: string }
   | { type: "connectorAddCustom"; draft: CustomConnectorDraft }
-  | { type: "connectorRemoveCustom"; id: string };
+  | { type: "connectorRemoveCustom"; id: string }
+  | { type: "connectorSetupViaClaudeCode"; id: string }
+  | { type: "connectorConnectWithApiKey"; id: string; apiKey: string };
 
 // ── Inbound (extension → webview) ─────────────────────────────
 

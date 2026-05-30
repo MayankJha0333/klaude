@@ -44,6 +44,16 @@ export interface CatalogEntry {
   /** If true, the server doesn't yet support RFC 7591 DCR and the
    *  user must paste a client_id / client_secret manually. */
   requiresManualClient?: boolean;
+  /** If true, the server only allows OAuth via a pre-registered partner client
+   *  (it blocks open Dynamic Client Registration — e.g. Figma returns 403), so
+   *  Klaude can't connect it directly. It must be authenticated through Claude
+   *  Code's own (claude.ai) integration; once done it appears as a managed card. */
+  requiresClaudeCodeAuth?: boolean;
+  /** For local (stdio) catalog presets that authenticate with a simple API
+   *  token instead of OAuth: which env var to collect and how to label it. The
+   *  Connect flow prompts for it, stores it in SecretStorage, and spawns the
+   *  command — fully local, no browser/OAuth. */
+  apiKeyEnv?: { key: string; label: string; hint?: string };
   /** OAuth scope hint passed to the authorize endpoint. */
   scope?: string;
   /** Whether this connector is built-in (cannot be removed). */
@@ -188,6 +198,57 @@ export const CURATED_CATALOG: ReadonlyArray<CatalogEntry> = [
     categories: ["infra", "devops"],
     icon: "cloud",
     homepage: "https://developers.cloudflare.com/agents/model-context-protocol/",
+    builtIn: true
+  },
+  // ── claude.ai first-party connectors ────────────────────────
+  // URLs match the `claude.ai <Name>` entries Claude Code lists. Canva and
+  // monday support open Dynamic Client Registration, so Klaude can OAuth them
+  // directly. Figma blocks DCR (403) and only allows Anthropic's pre-registered
+  // client — it's flagged `requiresClaudeCodeAuth` so the card sends the user
+  // through Claude Code instead of a Connect button that can't succeed. (Slack,
+  // Google Drive, and Box are in the same boat and intentionally omitted until
+  // there's a working setup path for them.)
+  {
+    // Official Figma — authenticated through Claude Code. Figma blocks
+    // third-party OAuth registration (its /register returns 403; only
+    // Anthropic's pre-registered client is allowed), so Klaude can't connect it
+    // directly. The card's "Set up via Claude Code" button drives Claude Code's
+    // own /mcp OAuth; Claude Code owns the token (Klaude never reads it), and
+    // once authorized the connector loads in Klaude's turns automatically.
+    id: "figma",
+    name: "Figma",
+    vendor: "figma.com",
+    description: "Read designs, frames, components, and variables from your Figma files.",
+    url: "https://mcp.figma.com/mcp",
+    transport: "streamable-http",
+    categories: ["design"],
+    icon: "layers",
+    homepage: "https://help.figma.com/hc/en-us/articles/32132100833559",
+    requiresClaudeCodeAuth: true,
+    builtIn: true
+  },
+  {
+    id: "canva",
+    name: "Canva",
+    vendor: "canva.com",
+    description: "Browse and create designs in your Canva account.",
+    url: "https://mcp.canva.com/mcp",
+    transport: "streamable-http",
+    categories: ["design"],
+    icon: "edit",
+    homepage: "https://www.canva.dev/docs/connect/mcp-server/",
+    builtIn: true
+  },
+  {
+    id: "monday",
+    name: "monday.com",
+    vendor: "monday.com",
+    description: "Read and update boards, items, and updates in monday.com.",
+    url: "https://mcp.monday.com/mcp",
+    transport: "streamable-http",
+    categories: ["productivity"],
+    icon: "check",
+    homepage: "https://developer.monday.com/apps/docs/mcp",
     builtIn: true
   }
 ];

@@ -7,7 +7,8 @@ import {
   slugify,
   cliServerName,
   cliToolNamespace,
-  deriveConnectorId
+  deriveConnectorId,
+  parseManagedId
 } from "../../src/services/mcp/index.js";
 
 describe("slugify (custom connector id prefix)", () => {
@@ -51,6 +52,23 @@ describe("cliToolNamespace (CLI mcp__<namespace>__<tool> parity)", () => {
     expect(cliToolNamespace("figma")).toBe("figma");
     expect(cliToolNamespace("a_b-c")).toBe("a_b-c");
     expect(cliToolNamespace("x".repeat(60))).toHaveLength(60);
+  });
+});
+
+describe("parseManagedId (managed:<scope>:<name>)", () => {
+  it("splits scope and name", () => {
+    expect(parseManagedId("managed:user:figma")).toEqual({ scope: "user", name: "figma" });
+    expect(parseManagedId("managed:local:my-server")).toEqual({ scope: "local", name: "my-server" });
+  });
+  it("keeps a name that itself contains colons", () => {
+    expect(parseManagedId("managed:project:plugin:figma:figma")).toEqual({
+      scope: "project",
+      name: "plugin:figma:figma"
+    });
+  });
+  it("returns null for non-managed or unknown-scope ids", () => {
+    expect(parseManagedId("linear")).toBeNull();
+    expect(parseManagedId("managed:bogus:x")).toBeNull();
   });
 });
 

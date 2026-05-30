@@ -30,6 +30,13 @@ export function ConnectorsModal({ open, onClose }: ConnectorsModalProps) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
+  // When set, an API-token prompt is shown for this local preset (e.g. Figma).
+  const [apiKeyPrompt, setApiKeyPrompt] = useState<{
+    id: string;
+    name: string;
+    label: string;
+    hint?: string;
+  } | null>(null);
 
   // Refresh + subscribe to server messages while open.
   useEffect(() => {
@@ -53,7 +60,9 @@ export function ConnectorsModal({ open, onClose }: ConnectorsModalProps) {
         if (m.ok) {
           const verb =
             m.action === "connect"
-              ? "Connected"
+              ? m.connector?.managed
+                ? "Refreshed"
+                : "Connected"
               : m.action === "disconnect"
                 ? "Disconnected"
                 : m.action === "add"
@@ -211,6 +220,12 @@ export function ConnectorsModal({ open, onClose }: ConnectorsModalProps) {
                 connector={c}
                 busy={busyId === c.id}
                 onConnect={() => {
+                  // Local API-token presets (e.g. Figma) prompt for the token
+                  // first, then connect via connectorConnectWithApiKey.
+                  if (c.apiKeyEnv) {
+                    setApiKeyPrompt({ id: c.id, name: c.name, ...c.apiKeyEnv });
+                    return;
+                  }
                   setBusyId(c.id);
                   send({ type: "connectorConnect", id: c.id });
                 }}
@@ -228,6 +243,14 @@ export function ConnectorsModal({ open, onClose }: ConnectorsModalProps) {
                   setBusyId(c.id);
                   send({ type: "connectorRemoveCustom", id: c.id });
                 }}
+                onSetupViaClaudeCode={() => {
+                  send({ type: "connectorSetupViaClaudeCode", id: c.id });
+                  setToast({
+                    ok: true,
+                    text: "Opening Claude Code — finish in the /mcp menu."
+                  });
+                  window.setTimeout(() => setToast(null), 5000);
+                }}
               />
             ))
           )}
@@ -239,6 +262,20 @@ export function ConnectorsModal({ open, onClose }: ConnectorsModalProps) {
             onSubmit={(draft) => {
               setBusyId("__add__");
               send({ type: "connectorAddCustom", draft });
+            }}
+          />
+        )}
+
+        {apiKeyPrompt && (
+          <ApiKeyPrompt
+            name={apiKeyPrompt.name}
+            label={apiKeyPrompt.label}
+            hint={apiKeyPrompt.hint}
+            onCancel={() => setApiKeyPrompt(null)}
+            onSubmit={(apiKey) => {
+              setBusyId(apiKeyPrompt.id);
+              send({ type: "connectorConnectWithApiKey", id: apiKeyPrompt.id, apiKey });
+              setApiKeyPrompt(null);
             }}
           />
         )}
@@ -269,7 +306,8 @@ function ConnectorCard({
   onConnect,
   onCancelConnect,
   onDisconnect,
-  onRemove
+  onRemove,
+  onSetupViaClaudeCode
 }: {
   connector: ConnectorView;
   busy: boolean;
@@ -277,12 +315,21 @@ function ConnectorCard({
   onCancelConnect: () => void;
   onDisconnect: () => void;
   onRemove: () => void;
+  onSetupViaClaudeCode: () => void;
 }) {
   const connected = connector.status === "connected";
   const errored = connector.status === "error";
   const managed = !!connector.managed;
   const isStdio = connector.transport === "stdio";
+  // Authorized through Claude Code's /mcp flow (per `claude mcp list`).
+  const ccConnected = !!connector.connectedViaClaudeCode;
+  // Vendor blocks third-party OAuth registration (e.g. Figma) — can't Connect
+  // directly; must be authenticated through Claude Code.
+  const claudeCodeAuth = !!connector.requiresClaudeCodeAuth && !connected && !ccConnected;
   const iconName = (connector.icon as IconName) ?? "cloud";
+  // Removing a managed server edits the user's Claude Code config, so it takes
+  // a deliberate two-click confirm.
+  const [confirmRemove, setConfirmRemove] = useState(false);
   // The card's hover title + the mono subtitle point at the endpoint:
   // a URL for remote servers, the command line for stdio ones.
   const target = connector.url ?? connector.command ?? "";
@@ -315,7 +362,7 @@ function ConnectorCard({
                 </span>
               </>
             ) : null}
-            {connected && !managed && (
+            {connector.toolCount > 0 && (
               <>
                 <span className="market-card-dot" />
                 <span style={{ color: "var(--ok)" }}>
@@ -357,6 +404,25 @@ function ConnectorCard({
         </p>
       )}
 
+      {claudeCodeAuth && (
+        <p
+          className="market-card-desc"
+          style={{
+            background: "var(--s2)",
+            border: "1px solid var(--b2)",
+            padding: "6px 8px",
+            borderRadius: 6,
+            fontSize: 11,
+            color: "var(--t3)"
+          }}
+        >
+          {connector.name} blocks third-party sign-in, so connect it through
+          Claude Code: run <code>claude</code> in a terminal, type{" "}
+          <code>/mcp</code>, and authorize {connector.name}. It then appears
+          here automatically.
+        </p>
+      )}
+
       <div className="market-card-actions">
         {connector.homepage && (
           <button
@@ -372,16 +438,72 @@ function ConnectorCard({
         )}
 
         {managed ? (
-          // Read-only — these are configured in Claude Code's own config.
-          // Manage them with the `claude mcp` CLI; Klaude just surfaces them
-          // and pre-allows their tools.
+          // Read-only — these are configured in Claude Code's own config, so no
+          // Connect/Disconnect/Remove. The user can re-check the live tool list
+          // (Klaude fetches it with the credentials Claude Code already stored).
+          busy ? (
+            <span
+              className="market-card-btn ghost"
+              style={{ marginLeft: "auto", cursor: "default" }}
+              aria-live="polite"
+            >
+              <span className="market-search-spinner" />
+              Checking…
+            </span>
+          ) : (
+            <>
+              <span
+                style={{
+                  marginLeft: "auto",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 11,
+                  color: "var(--t4)"
+                }}
+                title="Configured in Claude Code — manage with the `claude mcp` CLI"
+              >
+                <Icon name="check" size={11} />
+                Managed by Claude Code
+              </span>
+              <button
+                type="button"
+                className="market-card-btn ghost"
+                onClick={onConnect}
+                title="Re-check this server's tools"
+              >
+                <Icon name="refresh" size={11} />
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="market-card-btn danger"
+                onClick={() => {
+                  if (confirmRemove) {
+                    onRemove();
+                    setConfirmRemove(false);
+                  } else {
+                    setConfirmRemove(true);
+                  }
+                }}
+                onBlur={() => setConfirmRemove(false)}
+                title={`Remove "${connector.name}" from your Claude Code config (claude mcp remove)`}
+              >
+                <Icon name="x" size={11} />
+                {confirmRemove ? "Confirm remove?" : "Remove"}
+              </button>
+            </>
+          )
+        ) : ccConnected ? (
+          // Authorized through Claude Code's /mcp flow — read-only here; Claude
+          // Code owns the token and loads it for every turn.
           <span
             className="market-card-btn ghost"
-            style={{ marginLeft: "auto", cursor: "default", opacity: 0.85 }}
-            title="Configured in Claude Code — manage with the `claude mcp` CLI"
+            style={{ marginLeft: "auto", cursor: "default", color: "var(--ok)" }}
+            title="Authorized in Claude Code — available in your turns"
           >
             <Icon name="check" size={11} />
-            Managed by Claude Code
+            Connected via Claude Code
           </span>
         ) : (
           <>
@@ -441,14 +563,25 @@ function ConnectorCard({
                   </button>
                 </>
               )
+            ) : claudeCodeAuth ? (
+              <button
+                type="button"
+                className="market-card-btn primary"
+                style={{ marginLeft: "auto" }}
+                onClick={onSetupViaClaudeCode}
+                title="Open Claude Code and start the /mcp connector setup"
+              >
+                <Icon name="terminal" size={11} />
+                Set up via Claude Code
+              </button>
             ) : (
               <button
                 type="button"
                 className="market-card-btn primary"
                 onClick={onConnect}
               >
-                <Icon name={isStdio ? "play" : "arrow"} size={11} />
-                {isStdio ? "Start" : "Connect"}
+                <Icon name={isStdio && !connector.apiKeyEnv ? "play" : "arrow"} size={11} />
+                {isStdio && !connector.apiKeyEnv ? "Start" : "Connect"}
               </button>
             )}
           </>
@@ -740,6 +873,83 @@ function parseEnv(text: string): Record<string, string> | undefined {
     if (key) out[key] = t.slice(eq + 1).trim();
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+// ── API-token prompt (local presets like Figma) ────────────
+
+function ApiKeyPrompt({
+  name,
+  label,
+  hint,
+  onCancel,
+  onSubmit
+}: {
+  name: string;
+  label: string;
+  hint?: string;
+  onCancel: () => void;
+  onSubmit: (apiKey: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const canSubmit = value.trim().length > 0;
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={onCancel}
+      style={{ background: "rgba(5,5,9,0.5)" }}
+    >
+      <div
+        className="modal"
+        role="dialog"
+        aria-label={`Connect ${name}`}
+        style={{ maxWidth: 440 }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <header className="market-head">
+          <div className="market-head-titles">
+            <h2 className="market-title">Connect {name}</h2>
+            <p className="market-sub">
+              Runs locally — no browser sign-in. The token is stored in VS Code's
+              SecretStorage and never leaves your machine except to {name}.
+            </p>
+          </div>
+          <button type="button" className="market-close" onClick={onCancel} aria-label="Close">
+            <Icon name="x" size={14} />
+          </button>
+        </header>
+        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <Field label={label} hint={hint}>
+            <input
+              type="password"
+              placeholder="Paste your token"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              spellCheck={false}
+              style={inputStyle}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && canSubmit) onSubmit(value.trim());
+              }}
+            />
+          </Field>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+            <button type="button" className="market-card-btn ghost" onClick={onCancel}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="market-card-btn primary"
+              disabled={!canSubmit}
+              onClick={() => onSubmit(value.trim())}
+            >
+              <Icon name="arrow" size={11} />
+              Connect
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Field({

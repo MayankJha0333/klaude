@@ -311,6 +311,17 @@ async function registerClient(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    // 401/403 here means the vendor gates client registration to pre-approved
+    // partners (Figma does this) — no third-party tool can self-register. Give
+    // an actionable message instead of a bare "Forbidden".
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `This server doesn't allow automatic OAuth registration (HTTP ${res.status}) — it ` +
+          `only accepts a pre-approved client. Authenticate it through Claude Code (run ` +
+          `\`claude\`, then \`/mcp\`), or paste a vendor-issued client_id/secret under ` +
+          `"Add custom → Advanced".`
+      );
+    }
     throw new Error(
       `Dynamic Client Registration failed (HTTP ${res.status}): ${text || res.statusText}`
     );

@@ -31,6 +31,10 @@ export interface McpClientOptions {
   transport: "streamable-http" | "sse";
   /** Bearer token. Omit for servers that don't require auth. */
   accessToken?: string;
+  /** Extra headers merged over the defaults — used for servers imported from
+   *  Claude Code's config, which may carry a non-Bearer or custom auth header
+   *  (e.g. `{ Authorization: "Bearer …" }` straight out of ~/.claude.json). */
+  headers?: Record<string, string>;
   /** Per-request timeout. */
   timeoutMs?: number;
 }
@@ -164,6 +168,10 @@ export class McpClient {
     }
     if (this.sessionId) {
       h["Mcp-Session-Id"] = this.sessionId;
+    }
+    // Caller-supplied headers win (e.g. an imported server's stored auth header).
+    if (this.opts.headers) {
+      for (const [k, v] of Object.entries(this.opts.headers)) h[k] = v;
     }
     return h;
   }

@@ -16,9 +16,10 @@ describe("mcp catalog", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("uses https endpoints for every connector", () => {
+  it("uses https endpoints for every remote connector", () => {
     for (const c of CURATED_CATALOG) {
-      expect(c.url.startsWith("https://"), `${c.id} url should be https`).toBe(true);
+      if (c.transport === "stdio") continue; // local presets have no url
+      expect(c.url?.startsWith("https://"), `${c.id} url should be https`).toBe(true);
     }
   });
 
@@ -26,16 +27,38 @@ describe("mcp catalog", () => {
     for (const c of CURATED_CATALOG) {
       expect(c.id, "id").toBeTruthy();
       expect(c.name, `${c.id} name`).toBeTruthy();
-      expect(c.transport === "streamable-http" || c.transport === "sse").toBe(true);
+      expect(
+        ["streamable-http", "sse", "stdio"].includes(c.transport),
+        `${c.id} transport`
+      ).toBe(true);
       expect(Array.isArray(c.categories)).toBe(true);
+    }
+  });
+
+  it("stdio presets carry a command (and apiKeyEnv if they need a token)", () => {
+    for (const c of CURATED_CATALOG) {
+      if (c.transport !== "stdio") continue;
+      expect(c.command, `${c.id} command`).toBeTruthy();
     }
   });
 
   it("derives transport consistently with the URL path (sse endpoints)", () => {
     for (const c of CURATED_CATALOG) {
-      if (/\/sse$/i.test(new URL(c.url).pathname)) {
+      if (c.url && /\/sse$/i.test(new URL(c.url).pathname)) {
         expect(c.transport, `${c.id} ends in /sse`).toBe("sse");
       }
     }
+  });
+
+  it("Figma authenticates through Claude Code (vendor blocks third-party OAuth)", () => {
+    const figma = findCatalog("figma");
+    expect(figma, "figma should be in the catalog").toBeTruthy();
+    expect(figma?.requiresClaudeCodeAuth).toBe(true);
+    expect(figma?.url).toBe("https://mcp.figma.com/mcp");
+  });
+
+  it("Canva and monday remain DCR-capable remote connectors", () => {
+    expect(findCatalog("canva")?.transport).toBe("streamable-http");
+    expect(findCatalog("monday")?.requiresClaudeCodeAuth).toBeFalsy();
   });
 });
