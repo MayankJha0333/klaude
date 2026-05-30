@@ -94,7 +94,7 @@ interface Frontmatter {
  * understands `name:` and `description:` since that's all we display;
  * a real YAML parser would be overkill for two single-line scalars.
  */
-function parseFrontmatter(content: string): Frontmatter {
+export function parseFrontmatter(content: string): Frontmatter {
   const m = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return {};
   const fm = m[1];

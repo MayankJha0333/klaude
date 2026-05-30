@@ -182,7 +182,7 @@ interface JsonRpcEnvelope {
  * `data:` line whose JSON has `id` matching the request (or just the
  * first one we see if the server doesn't echo ids).
  */
-async function parseEnvelope(res: Response): Promise<JsonRpcEnvelope> {
+export async function parseEnvelope(res: Response): Promise<JsonRpcEnvelope> {
   const ctype = (res.headers.get("content-type") ?? "").toLowerCase();
   if (ctype.includes("text/event-stream")) {
     const text = await res.text();

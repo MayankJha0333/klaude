@@ -370,7 +370,7 @@ function resolveConfig(
   return customAsCatalog(custom);
 }
 
-function slugify(s: string): string {
+export function slugify(s: string): string {
   return s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -494,7 +494,7 @@ export async function writeCliMcpConfig(
  * exposes tools as `mcp__<name>__<tool>`, so the name needs to round-trip
  * through that pattern cleanly.
  */
-function cliServerName(id: string): string {
+export function cliServerName(id: string): string {
   // Keep alphanum + underscore + hyphen; collapse everything else.
   const cleaned = id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
   return cleaned || `connector_${crypto.randomBytes(3).toString("hex")}`;

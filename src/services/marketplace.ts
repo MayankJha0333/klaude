@@ -211,7 +211,7 @@ export async function uninstallSkill(
   }
 }
 
-function installRoot(
+export function installRoot(
   name: string,
   scope: InstallScope,
   workspaceRoot: string | undefined

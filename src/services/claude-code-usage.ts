@@ -112,6 +112,12 @@ export interface AggregateOptions {
    *               aggregation, not per-project). Default.
    */
   scope?: "workspace" | "all";
+  /**
+   * Override the root scanned for `<encoded-cwd>/*.jsonl` project dirs.
+   * Defaults to `~/.claude/projects`. Exposed so the windowing/aggregation
+   * logic can be exercised against a fixture directory in tests.
+   */
+  projectsRoot?: string;
 }
 
 /**
@@ -129,7 +135,8 @@ export async function aggregateClaudeCodeUsage(
   opts: AggregateOptions = {}
 ): Promise<AggregatedUsage> {
   const scope = opts.scope ?? "all";
-  const projectsRoot = path.join(os.homedir(), ".claude", "projects");
+  const projectsRoot =
+    opts.projectsRoot ?? path.join(os.homedir(), ".claude", "projects");
   const empty = (): UsageTotals => ({
     inputTokens: 0,
     outputTokens: 0,
