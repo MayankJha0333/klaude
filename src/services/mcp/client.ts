@@ -133,7 +133,9 @@ export class McpClient {
     const sid = res.headers.get("mcp-session-id");
     if (sid && method === "initialize") this.sessionId = sid;
 
-    const env = await parseEnvelope(res);
+    // Pass our request id so parseEnvelope returns *this* call's frame, not
+    // whatever happens to come first on a multiplexed SSE stream.
+    const env = await parseEnvelope(res, id);
     if (env.error) {
       throw new Error(
         `MCP ${method} error ${env.error.code}: ${env.error.message}`
@@ -177,35 +179,74 @@ interface JsonRpcEnvelope {
 }
 
 /**
- * Parse either a JSON or SSE-formatted JSON-RPC response. SSE servers
- * stream `event: message\ndata: { ... }\n\n` blocks — we read the first
- * `data:` line whose JSON has `id` matching the request (or just the
- * first one we see if the server doesn't echo ids).
+ * Parse either a JSON or SSE-formatted JSON-RPC response.
+ *
+ * SSE servers stream `event: message\ndata: { … }\n\n` blocks and may
+ * multiplex several JSON-RPC frames (notifications, server→client requests,
+ * and responses to different ids) onto one stream. When `expectedId` is
+ * given we return the response frame whose `id` matches it, skipping
+ * notifications and frames belonging to other requests. Without an
+ * `expectedId` we fall back to the first valid response frame (used by the
+ * single-shot tests).
+ *
+ * A response frame with no `id` at all (some servers omit it) is kept as a
+ * last-resort fallback so we don't error out on otherwise-valid replies.
  */
-export async function parseEnvelope(res: Response): Promise<JsonRpcEnvelope> {
+export async function parseEnvelope(
+  res: Response,
+  expectedId?: string | number
+): Promise<JsonRpcEnvelope> {
   const ctype = (res.headers.get("content-type") ?? "").toLowerCase();
   if (ctype.includes("text/event-stream")) {
     const text = await res.text();
-    const dataLines = text
-      .split(/\r?\n/)
-      .filter((l) => l.startsWith("data:"))
-      .map((l) => l.slice(5).trim())
-      .filter(Boolean);
-    for (const d of dataLines) {
+    let fallback: JsonRpcEnvelope | undefined;
+    for (const d of extractSseData(text)) {
+      let env: JsonRpcEnvelope;
       try {
-        const env = JSON.parse(d) as JsonRpcEnvelope;
-        if (env.jsonrpc === "2.0" && (env.result !== undefined || env.error)) {
-          return env;
-        }
+        env = JSON.parse(d) as JsonRpcEnvelope;
       } catch {
-        // skip non-JSON events
+        continue; // skip non-JSON events (comments, pings, …)
       }
+      if (env.jsonrpc !== "2.0") continue;
+      // Only responses carry result/error; ignore notifications + requests.
+      if (env.result === undefined && !env.error) continue;
+      if (expectedId === undefined) return env; // legacy: first valid response
+      if (idsMatch(env.id, expectedId)) return env; // the frame we asked for
+      // A response that doesn't echo an id can't be attributed to another
+      // request — hold onto it in case nothing matches.
+      if (env.id === undefined && !fallback) fallback = env;
     }
+    if (fallback) return fallback;
     throw new Error("SSE stream contained no JSON-RPC envelope");
   }
   const text = await res.text();
   if (!text) throw new Error("Empty response body");
   return JSON.parse(text) as JsonRpcEnvelope;
+}
+
+/**
+ * Pull the JSON payloads out of an SSE body. Splits into events on blank
+ * lines and concatenates each event's `data:` lines (SSE permits a single
+ * logical payload to span several `data:` lines).
+ */
+function extractSseData(text: string): string[] {
+  const out: string[] = [];
+  for (const event of text.split(/\r?\n\r?\n/)) {
+    const data = event
+      .split(/\r?\n/)
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => l.slice(5).replace(/^ /, "")) // drop the one optional leading space
+      .join("\n")
+      .trim();
+    if (data) out.push(data);
+  }
+  return out;
+}
+
+/** JSON-RPC ids round-trip as string or number; compare leniently. */
+function idsMatch(a: unknown, b: unknown): boolean {
+  if (a === undefined || b === undefined) return false;
+  return a === b || String(a) === String(b);
 }
 
 function randomId(): string {

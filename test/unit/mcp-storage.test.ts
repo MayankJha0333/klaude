@@ -15,10 +15,14 @@ import {
   saveTokens,
   loadTokens,
   deleteTokens,
+  saveStdioEnv,
+  loadStdioEnv,
+  deleteStdioEnv,
   resolveConnector,
   CustomConnector,
   ConnectionRecord
 } from "../../src/services/mcp/storage.js";
+import { addCustom, removeCustom } from "../../src/services/mcp/index.js";
 
 /** Minimal in-memory ExtensionContext double (globalState + secrets). */
 function makeCtx(): any {
@@ -115,6 +119,51 @@ describe("token keychain", () => {
     const t = await loadTokens(ctx, "x");
     expect(t.accessToken).toBe("at");
     expect(t.refreshToken).toBeUndefined();
+  });
+});
+
+describe("stdio env keychain (security #5 — secrets, not plaintext globalState)", () => {
+  it("round-trips and deletes a stdio env blob via ctx.secrets", async () => {
+    const ctx = makeCtx();
+    await saveStdioEnv(ctx, "srv", { API_KEY: "sk-123", OTHER: "v" });
+    expect(await loadStdioEnv(ctx, "srv")).toEqual({ API_KEY: "sk-123", OTHER: "v" });
+    await deleteStdioEnv(ctx, "srv");
+    expect(await loadStdioEnv(ctx, "srv")).toBeUndefined();
+  });
+
+  it("returns undefined when nothing is stored", async () => {
+    expect(await loadStdioEnv(makeCtx(), "nope")).toBeUndefined();
+  });
+
+  it("addCustom(stdio) stores env values in secrets, NOT in the globalState record", async () => {
+    const ctx = makeCtx();
+    const view = await addCustom(ctx, {
+      name: "Local FS",
+      kind: "stdio",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      env: { API_KEY: "sk-secret" }
+    });
+    // The persisted connector record must not carry the secret value.
+    const saved = loadCustomConnectors(ctx).find((c) => c.id === view.id)!;
+    expect(JSON.stringify(saved)).not.toContain("sk-secret");
+    expect((saved as Record<string, unknown>).env).toBeUndefined();
+    // …but it must be retrievable from the keychain.
+    expect(await loadStdioEnv(ctx, view.id)).toEqual({ API_KEY: "sk-secret" });
+  });
+
+  it("removeCustom wipes the stdio env secret", async () => {
+    const ctx = makeCtx();
+    const view = await addCustom(ctx, {
+      name: "Local FS",
+      kind: "stdio",
+      command: "npx",
+      env: { API_KEY: "sk-secret" }
+    });
+    expect(await loadStdioEnv(ctx, view.id)).toBeDefined();
+    await removeCustom(ctx, view.id);
+    expect(await loadStdioEnv(ctx, view.id)).toBeUndefined();
+    expect(loadCustomConnectors(ctx).find((c) => c.id === view.id)).toBeUndefined();
   });
 });
 

@@ -29,10 +29,12 @@ export interface CatalogEntry {
   vendor: string;
   /** One-line description shown on the card. */
   description: string;
-  /** Public MCP server URL — POST endpoint for Streamable-HTTP. */
-  url: string;
-  /** Streamable-HTTP is the modern transport; SSE is legacy. */
-  transport: "streamable-http" | "sse";
+  /** Public MCP server URL — POST endpoint for Streamable-HTTP. Absent for
+   *  stdio entries (custom connectors only; the curated catalog is all remote). */
+  url?: string;
+  /** Streamable-HTTP is the modern transport; SSE is legacy; stdio is a
+   *  locally-spawned command (custom connectors only). */
+  transport: "streamable-http" | "sse" | "stdio";
   /** Categorical tags used by the UI to filter. */
   categories: string[];
   /** Icon name from our local set. */
@@ -46,6 +48,12 @@ export interface CatalogEntry {
   scope?: string;
   /** Whether this connector is built-in (cannot be removed). */
   builtIn?: boolean;
+  /** stdio: executable to spawn. */
+  command?: string;
+  /** stdio: arguments passed to the command. */
+  args?: string[];
+  /** stdio: extra environment variables merged into the child's env. */
+  env?: Record<string, string>;
 }
 
 /**

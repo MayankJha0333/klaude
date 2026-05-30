@@ -231,8 +231,9 @@ export interface ConnectorView {
   name: string;
   vendor: string;
   description: string;
-  url: string;
-  transport: "streamable-http" | "sse";
+  /** Remote endpoint. Absent for stdio connectors. */
+  url?: string;
+  transport: "streamable-http" | "sse" | "stdio";
   categories: string[];
   /** Icon name from our local design/icons.tsx registry. */
   icon: string;
@@ -243,13 +244,27 @@ export interface ConnectorView {
   toolCount: number;
   tools?: ConnectorTool[];
   lastError?: string;
+  /** stdio: the command line shown on the card. */
+  command?: string;
+  /** True for servers imported from Claude Code's own config (read-only). */
+  managed?: boolean;
+  /** For managed servers: which Claude Code scope they came from. */
+  scope?: "user" | "project" | "local";
 }
 
 export interface CustomConnectorDraft {
   name: string;
-  url: string;
+  /** "remote" (http/sse via url) or "stdio" (local command). */
+  kind?: "remote" | "stdio";
+  url?: string;
   clientId?: string;
   clientSecret?: string;
+  /** stdio: executable to spawn. */
+  command?: string;
+  /** stdio: arguments passed to the command. */
+  args?: string[];
+  /** stdio: extra environment variables. */
+  env?: Record<string, string>;
 }
 
 // ── Outbound (webview → extension) ────────────────────────────

@@ -26,26 +26,33 @@ import {
   ConnectionRecord,
   ConnectorTool,
   CustomConnector,
+  McpTransport,
   clearConnectionRecord,
   deleteTokens,
+  deleteStdioEnv,
   loadConnections,
   loadCustomConnectors,
+  loadStdioEnv,
   loadTokens,
   removeCustomConnector,
   saveCustomConnector,
+  saveStdioEnv,
   saveTokens,
   setConnectionRecord
 } from "./storage.js";
 import { performOAuth, refreshAccessToken, OAuthCancelled } from "./oauth.js";
 import { McpClient } from "./client.js";
+import { StdioMcpClient } from "./stdio-client.js";
+import { loadManagedServers, ManagedScope } from "./cli-config.js";
 
 export interface ConnectorView {
   id: string;
   name: string;
   vendor: string;
   description: string;
-  url: string;
-  transport: "streamable-http" | "sse";
+  /** Remote endpoint. Absent for stdio connectors. */
+  url?: string;
+  transport: McpTransport;
   categories: string[];
   icon: string;
   homepage?: string;
@@ -55,9 +62,15 @@ export interface ConnectorView {
   toolCount: number;
   tools?: ConnectorTool[];
   lastError?: string;
+  /** stdio: the command line shown on the card (e.g. "npx -y @scope/server"). */
+  command?: string;
+  /** True for servers imported from Claude Code's own config (read-only). */
+  managed?: boolean;
+  /** For managed servers: which Claude Code scope they came from. */
+  scope?: ManagedScope;
 }
 
-/** Merge catalog + custom + saved state into a single list for the UI. */
+/** Merge catalog + custom + Claude-Code-managed servers into one UI list. */
 export function listConnectors(ctx: vscode.ExtensionContext): ConnectorView[] {
   const conns = loadConnections(ctx);
   const customs = loadCustomConnectors(ctx);
@@ -68,7 +81,48 @@ export function listConnectors(ctx: vscode.ExtensionContext): ConnectorView[] {
   const fromCustom: ConnectorView[] = customs.map((c) =>
     toView(customAsCatalog(c), conns[c.id], false)
   );
-  return [...fromCatalog, ...fromCustom];
+
+  // Servers the user already configured in Claude Code (read-only here). Skip
+  // any whose name matches a connector Klaude itself connected, so the same
+  // server doesn't show up twice. We compare on the human display name
+  // (case-insensitively) rather than the CLI id — custom-connector ids are
+  // hashed (`slug-<hash>`), so they'd never match a managed config key.
+  const ownNames = new Set(
+    [...CURATED_CATALOG, ...customs]
+      .filter((c) => conns[c.id]?.status === "connected")
+      .map((c) => c.name.toLowerCase())
+  );
+  const fromManaged: ConnectorView[] = listManagedViews().filter(
+    (v) => !ownNames.has(v.name.toLowerCase())
+  );
+
+  return [...fromCatalog, ...fromCustom, ...fromManaged];
+}
+
+/** Map Claude Code's own MCP servers into read-only connector cards. */
+function listManagedViews(): ConnectorView[] {
+  const cwd = vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath;
+  return loadManagedServers(cwd).map((s) => ({
+    id: `managed:${s.scope}:${s.name}`,
+    name: s.name,
+    vendor: "Claude Code",
+    description:
+      s.transport === "stdio"
+        ? `Local command managed by Claude Code (${s.scope}).`
+        : `Remote MCP server managed by Claude Code (${s.scope}).`,
+    url: s.url,
+    transport: s.transport,
+    categories: ["claude-code", s.scope],
+    icon: s.transport === "stdio" ? "terminal" : "cloud",
+    builtIn: true,
+    // The CLI loads these for every turn, so from Klaude's vantage they're
+    // effectively always "connected".
+    status: "connected",
+    toolCount: 0,
+    command: s.transport === "stdio" ? commandLine(s.command, s.args) : undefined,
+    managed: true,
+    scope: s.scope
+  }));
 }
 
 function toView(
@@ -91,16 +145,32 @@ function toView(
     connectedAt: rec?.connectedAt,
     toolCount: rec?.tools?.length ?? 0,
     tools: rec?.tools,
-    lastError: rec?.lastError
+    lastError: rec?.lastError,
+    command:
+      c.transport === "stdio" ? commandLine(c.command, c.args) : undefined
   };
 }
 
 function customAsCatalog(c: CustomConnector): CatalogEntry {
+  if (c.transport === "stdio") {
+    return {
+      id: c.id,
+      name: c.name,
+      vendor: "local",
+      description: c.description ?? `Local MCP server: ${commandLine(c.command, c.args)}`,
+      transport: "stdio",
+      categories: ["custom", "local"],
+      icon: "terminal",
+      command: c.command,
+      args: c.args,
+      builtIn: false
+    };
+  }
   return {
     id: c.id,
     name: c.name,
-    vendor: new URL(c.url).host,
-    description: c.description ?? `Custom MCP server at ${c.url}`,
+    vendor: c.url ? new URL(c.url).host : "custom",
+    description: c.description ?? `Custom MCP server at ${c.url ?? "?"}`,
     url: c.url,
     transport: c.transport,
     categories: ["custom"],
@@ -109,15 +179,30 @@ function customAsCatalog(c: CustomConnector): CatalogEntry {
   };
 }
 
+/** Render a stdio command + args into a single display string. */
+function commandLine(command?: string, args?: string[]): string {
+  return [command ?? "", ...(args ?? [])].join(" ").trim();
+}
+
 // ── Add / remove custom ─────────────────────────────────────
 
 export interface CustomDraft {
   name: string;
-  url: string;
-  /** Optional pre-registered OAuth client id. */
+  /** "remote" (http/sse via `url`) or "stdio" (local `command`). Defaults to
+   *  "remote" for back-compat with callers that only send name + url. */
+  kind?: "remote" | "stdio";
+  /** Remote transports: the server URL. */
+  url?: string;
+  /** Optional pre-registered OAuth client id (remote). */
   clientId?: string;
-  /** Optional pre-registered client secret. */
+  /** Optional pre-registered client secret (remote). */
   clientSecret?: string;
+  /** stdio: executable to spawn. */
+  command?: string;
+  /** stdio: arguments passed to the command. */
+  args?: string[];
+  /** stdio: extra environment variables. */
+  env?: Record<string, string>;
 }
 
 export async function addCustom(
@@ -125,8 +210,21 @@ export async function addCustom(
   draft: CustomDraft
 ): Promise<ConnectorView> {
   const name = draft.name.trim();
-  const url = draft.url.trim();
   if (!name) throw new Error("Name is required.");
+  const kind = draft.kind ?? "remote";
+
+  if (kind === "stdio") {
+    return addCustomStdio(ctx, name, draft);
+  }
+  return addCustomRemote(ctx, name, draft);
+}
+
+async function addCustomRemote(
+  ctx: vscode.ExtensionContext,
+  name: string,
+  draft: CustomDraft
+): Promise<ConnectorView> {
+  const url = (draft.url ?? "").trim();
   if (!url) throw new Error("URL is required.");
   let parsed: URL;
   try {
@@ -138,10 +236,11 @@ export async function addCustom(
     throw new Error("MCP server URLs must use HTTPS (except localhost).");
   }
 
-  const id = slugify(name) + "-" + parsed.host.replace(/[^a-z0-9]/gi, "");
-  const transport: "streamable-http" | "sse" = /sse$/i.test(parsed.pathname)
-    ? "sse"
-    : "streamable-http";
+  const transport: McpTransport = /sse$/i.test(parsed.pathname) ? "sse" : "streamable-http";
+  // Fix (#6): fold the *full* URL (path included) into the id. The previous
+  // `slugify(name)-<host>` ignored the path, so `…/mcp` and `…/sse` on the
+  // same host collided and the second save silently overwrote the first.
+  const id = deriveConnectorId(name, `${transport}:${parsed.toString()}`);
 
   const entry: CustomConnector = {
     id,
@@ -162,11 +261,58 @@ export async function addCustom(
   return toView(customAsCatalog(entry), conns[id], false);
 }
 
+async function addCustomStdio(
+  ctx: vscode.ExtensionContext,
+  name: string,
+  draft: CustomDraft
+): Promise<ConnectorView> {
+  const command = (draft.command ?? "").trim();
+  if (!command) throw new Error("Command is required for a local (stdio) server.");
+  const args = (draft.args ?? []).map((a) => a.trim()).filter(Boolean);
+  const env =
+    draft.env && Object.keys(draft.env).length ? draft.env : undefined;
+
+  // Discriminate on command + args so two stdio servers that differ only by
+  // arguments get distinct ids (same anti-collision rationale as #6).
+  const id = deriveConnectorId(name, `stdio:${command} ${args.join(" ")}`);
+
+  const entry: CustomConnector = {
+    id,
+    name,
+    transport: "stdio",
+    command,
+    args: args.length ? args : undefined,
+    // Keep the executable name (not the full arg list) out of the persisted
+    // description, since args can carry secrets; the full command line is
+    // shown on the card via the `command` field, not stored here.
+    description: `Local MCP server: ${command}`
+  };
+  await saveCustomConnector(ctx, entry);
+  // Env values may be credentials — store them in the keychain, not globalState.
+  if (env) await saveStdioEnv(ctx, id, env);
+
+  const conns = loadConnections(ctx);
+  return toView(customAsCatalog(entry), conns[id], false);
+}
+
+/**
+ * Derive a stable connector id from the display name plus a discriminator —
+ * the full URL for remote servers, or `command + args` for stdio. Folding the
+ * discriminator into a short hash (rather than just name + host) means two
+ * servers that differ only by URL path or by command no longer collapse to
+ * the same id and overwrite each other (audit finding #6).
+ */
+export function deriveConnectorId(name: string, discriminator: string): string {
+  const hash = crypto.createHash("sha256").update(discriminator).digest("hex").slice(0, 8);
+  return `${slugify(name)}-${hash}`;
+}
+
 export async function removeCustom(
   ctx: vscode.ExtensionContext,
   id: string
 ): Promise<void> {
   await deleteTokens(ctx, id);
+  await deleteStdioEnv(ctx, id);
   await clearConnectionRecord(ctx, id);
   await removeCustomConnector(ctx, id);
 }
@@ -190,15 +336,9 @@ export function cancelConnect(id: string): boolean {
 }
 
 /**
- * Run the full Connect flow:
- *   1. Resolve the connector's URL + optional pre-registered client.
- *   2. Run OAuth (DCR + PKCE + browser loopback) → tokens.
- *   3. Initialize the MCP session and list its tools.
- *   4. Persist tokens, refresh metadata, and the connection record.
- *
- * Throws on any failure; the caller surfaces the message to the UI.
- * The OAuth step is cancellable via `cancelConnect(id)` — useful when
- * the user closes the browser without finishing OAuth.
+ * Connect a connector by id. Dispatches by transport: stdio servers spawn
+ * locally (no auth), remote servers run the OAuth flow. Throws on any
+ * failure; the caller surfaces the message to the UI.
  */
 export async function connect(
   ctx: vscode.ExtensionContext,
@@ -206,6 +346,68 @@ export async function connect(
 ): Promise<ConnectorView> {
   const config = resolveConfig(ctx, id);
   if (!config) throw new Error(`No connector with id "${id}".`);
+
+  // stdio servers are local — no OAuth, no browser. Spawn + handshake only.
+  if (config.transport === "stdio") {
+    return connectStdio(ctx, id, config);
+  }
+  return connectRemote(ctx, id, config);
+}
+
+/** Spawn a local stdio server, handshake, list its tools, then tear it down. */
+async function connectStdio(
+  ctx: vscode.ExtensionContext,
+  id: string,
+  config: CatalogEntry
+): Promise<ConnectorView> {
+  if (!config.command) {
+    throw new Error("This stdio connector has no command configured.");
+  }
+  const client = new StdioMcpClient({
+    command: config.command,
+    args: config.args,
+    env: await loadStdioEnv(ctx, id),
+    cwd: vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath
+  });
+
+  let tools: ConnectorTool[] = [];
+  try {
+    const handshake = await client.connectAndList();
+    tools = handshake.tools;
+  } catch (err) {
+    await setConnectionRecord(ctx, {
+      id,
+      status: "error",
+      lastError: err instanceof Error ? err.message : String(err)
+    });
+    throw err;
+  }
+
+  const rec: ConnectionRecord = {
+    id,
+    status: "connected",
+    connectedAt: Date.now(),
+    tools
+  };
+  await setConnectionRecord(ctx, rec);
+  return toView(config, rec, !!findCatalog(id));
+}
+
+/**
+ * Remote connect flow:
+ *   1. Run OAuth (DCR + PKCE + browser loopback) → tokens.
+ *   2. Initialize the MCP session and list its tools.
+ *   3. Persist tokens, refresh metadata, and the connection record.
+ *
+ * Cancellable via `cancelConnect(id)` — useful when the user closes the
+ * browser without finishing OAuth.
+ */
+async function connectRemote(
+  ctx: vscode.ExtensionContext,
+  id: string,
+  config: CatalogEntry
+): Promise<ConnectorView> {
+  if (!config.url) throw new Error("This connector has no URL configured.");
 
   // If a prior attempt is still pending for this connector, replace it.
   inflightConnects.get(id)?.abort();
@@ -252,7 +454,7 @@ export async function connect(
   // Initialize + list tools so the UI can show a meaningful tool count.
   const client = new McpClient({
     url: config.url,
-    transport: config.transport,
+    transport: config.transport === "sse" ? "sse" : "streamable-http",
     accessToken: tokens.accessToken
   });
 
@@ -311,11 +513,30 @@ export async function callTool(
 ): Promise<{ ok: true; content: unknown } | { ok: false; error: string }> {
   const config = resolveConfig(ctx, id);
   if (!config) return { ok: false, error: `No connector with id "${id}".` };
+
+  // stdio: spawn the command, handshake, invoke, tear down. No tokens.
+  if (config.transport === "stdio") {
+    if (!config.command) return { ok: false, error: "No command configured." };
+    const stdio = new StdioMcpClient({
+      command: config.command,
+      args: config.args,
+      env: await loadStdioEnv(ctx, id),
+      cwd: vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath
+    });
+    try {
+      const res = await stdio.callTool(toolName, args);
+      return { ok: true, content: res.content };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   const conns = loadConnections(ctx);
   const rec = conns[id];
   let { accessToken, refreshToken, clientSecret } = await loadTokens(ctx, id);
 
   if (!accessToken) return { ok: false, error: "Not connected." };
+  if (!config.url) return { ok: false, error: "No URL configured." };
 
   // Best-effort refresh if the token is known to be expired.
   if (rec?.expiresAt && Date.now() > rec.expiresAt - 30_000 && refreshToken && rec.tokenEndpoint && rec.registeredClientId) {
@@ -340,7 +561,7 @@ export async function callTool(
 
   const client = new McpClient({
     url: config.url,
-    transport: config.transport,
+    transport: config.transport === "sse" ? "sse" : "streamable-http",
     accessToken
   });
   try {
@@ -382,91 +603,121 @@ export type { ConnectorTool } from "./storage.js";
 export { OAuthCancelled } from "./oauth.js";
 
 // ─────────────────────────────────────────────────────────────
-// CLI bridge — write connected servers into a temp file the
-// Claude Code CLI can consume via `--mcp-config <path>`.
+// CLI bridge — write Klaude's own connected servers into a temp file
+// the Claude Code CLI consumes via `--mcp-config <path>`.
 //
-// The CLI's MCP config format is:
+// The CLI's MCP config format (identical to ~/.claude.json / .mcp.json):
 //
-//   {
-//     "mcpServers": {
-//       "<name>": {
-//         "type": "http" | "sse" | "stdio",
-//         "url":  "<url>",
-//         "headers": { "Authorization": "Bearer <token>" }
-//       }
-//     }
-//   }
+//   { "mcpServers": {
+//       "<name>": { "type":"http"|"sse", "url":"…", "headers":{…} }   // remote
+//       "<name>": { "type":"stdio", "command":"…", "args":[…], "env":{…} } // local
+//   } }
 //
-// We emit one entry per server whose status === "connected" with
-// a valid access token. The file is written to the OS temp dir
-// with mode 0600 so it isn't readable by other users on a shared
-// machine, and the caller is expected to call `cleanupCliMcpConfig`
-// after the CLI exits.
+// We materialize ONLY Klaude's own connected connectors here. Servers the
+// user already configured in Claude Code (~/.claude.json + .mcp.json) are
+// NOT re-emitted — the CLI loads them itself (we don't pass
+// `--strict-mcp-config`) and re-listing would double-register them. We do,
+// however, return their names in `serverNames` so their tools get pre-allowed
+// alongside ours. The file is written to OS temp with mode 0600 because it
+// holds bearer tokens; the caller calls `cleanup()` after the CLI exits.
 // ─────────────────────────────────────────────────────────────
 
+/** A single server entry in the CLI's `mcpServers` map. */
+export type CliServerEntry =
+  | { type: "http" | "sse"; url: string; headers: Record<string, string> }
+  | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string> };
+
 export interface CliMcpConfig {
-  /** Absolute path to the JSON config; pass via `--mcp-config`. */
-  path: string;
-  /** Names of the server entries written — useful for logging. */
+  /** Absolute path to the JSON config; pass via `--mcp-config`. Undefined when
+   *  Klaude has no own connectors to write (managed servers still pre-allowed). */
+  path?: string;
+  /** Server names to pre-allow as `mcp__<name>` — Klaude's own + Claude Code's. */
   serverNames: string[];
   /** Best-effort cleanup helper. */
   cleanup: () => Promise<void>;
 }
 
 /**
- * Materialize a Claude-CLI-compatible `--mcp-config` file containing
- * every currently-connected MCP server with its access token. Returns
- * `null` when there are no connected servers (caller should skip the
- * flag in that case so the CLI doesn't get an empty config).
+ * Map a resolved connector config + (for remote) its access token into the
+ * CLI's server-entry shape. Pure — returns null for shapes we can't emit
+ * (remote with no url, stdio with no command). Exported for unit tests.
+ */
+export function toCliServerEntry(
+  config: {
+    transport: McpTransport;
+    url?: string;
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+  },
+  accessToken?: string
+): CliServerEntry | null {
+  if (config.transport === "stdio") {
+    if (!config.command) return null;
+    const entry: CliServerEntry = { type: "stdio", command: config.command };
+    if (config.args && config.args.length) entry.args = config.args;
+    if (config.env && Object.keys(config.env).length) entry.env = config.env;
+    return entry;
+  }
+  if (!config.url) return null;
+  return {
+    type: config.transport === "sse" ? "sse" : "http",
+    url: config.url,
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  };
+}
+
+/**
+ * Materialize a Claude-CLI-compatible `--mcp-config` file for Klaude's own
+ * connected connectors, and gather the full pre-allow name list (own +
+ * Claude-Code-managed). Returns `null` only when there's nothing at all —
+ * no own connectors AND no managed servers.
  */
 export async function writeCliMcpConfig(
   ctx: vscode.ExtensionContext
 ): Promise<CliMcpConfig | null> {
   const conns = loadConnections(ctx);
-  const customs = loadCustomConnectors(ctx);
+  const cwd = vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath;
 
-  // Collect connected entries paired with their resolved config + token.
-  const entries: Array<{
-    name: string;
-    type: "http" | "sse";
-    url: string;
-    accessToken: string;
-  }> = [];
-
+  // Klaude's own connected connectors → file entries.
+  const own: Array<{ name: string; entry: CliServerEntry }> = [];
   for (const rec of Object.values(conns)) {
     if (rec.status !== "connected") continue;
     const config = resolveConfig(ctx, rec.id);
     if (!config) continue;
-    const tokens = await loadTokens(ctx, rec.id);
-    if (!tokens.accessToken) continue;
-    entries.push({
-      name: cliServerName(rec.id),
-      type: config.transport === "sse" ? "sse" : "http",
-      url: config.url,
-      accessToken: tokens.accessToken
-    });
-  }
-
-  if (entries.length === 0) {
-    void customs; // silence unused-binding lint when no customs are connected
-    return null;
-  }
-
-  const mcpServers: Record<
-    string,
-    {
-      type: "http" | "sse";
-      url: string;
-      headers: Record<string, string>;
+    let accessToken: string | undefined;
+    let env: Record<string, string> | undefined;
+    if (config.transport === "stdio") {
+      env = await loadStdioEnv(ctx, rec.id); // secrets, not globalState
+    } else {
+      const tokens = await loadTokens(ctx, rec.id);
+      if (!tokens.accessToken) continue; // remote without a token — skip
+      accessToken = tokens.accessToken;
     }
-  > = {};
-  for (const e of entries) {
-    mcpServers[e.name] = {
-      type: e.type,
-      url: e.url,
-      headers: { Authorization: `Bearer ${e.accessToken}` }
-    };
+    const entry = toCliServerEntry({ ...config, env }, accessToken);
+    if (entry) own.push({ name: cliServerName(rec.id), entry });
   }
+
+  // Servers Claude Code already manages → names only (CLI loads them itself).
+  // Sanitize through the same transform the CLI applies when it builds tool
+  // ids (`mcp__<namespace>__<tool>`); otherwise a managed server whose config
+  // key has a dot/space/etc. would be pre-allowed under the wrong name and its
+  // tools would stay gated.
+  const ownNames = new Set(own.map((o) => o.name));
+  const managedNames = loadManagedServers(cwd)
+    .map((s) => cliToolNamespace(s.name))
+    .filter((n) => !ownNames.has(n));
+
+  const serverNames = [...own.map((o) => o.name), ...managedNames];
+
+  if (own.length === 0) {
+    // Nothing to write, but managed names may still need pre-allowing.
+    if (serverNames.length === 0) return null;
+    return { serverNames, cleanup: async () => undefined };
+  }
+
+  const mcpServers: Record<string, CliServerEntry> = {};
+  for (const o of own) mcpServers[o.name] = o.entry;
 
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "klaude-mcp-"));
   const file = path.join(dir, "mcp.json");
@@ -477,7 +728,7 @@ export async function writeCliMcpConfig(
 
   return {
     path: file,
-    serverNames: entries.map((e) => e.name),
+    serverNames,
     cleanup: async () => {
       try {
         await fs.unlink(file);
@@ -496,6 +747,18 @@ export async function writeCliMcpConfig(
  */
 export function cliServerName(id: string): string {
   // Keep alphanum + underscore + hyphen; collapse everything else.
-  const cleaned = id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
+  const cleaned = cliToolNamespace(id).slice(0, 48);
   return cleaned || `connector_${crypto.randomBytes(3).toString("hex")}`;
+}
+
+/**
+ * The exact transform the Claude Code CLI applies to a server name when it
+ * derives tool ids `mcp__<namespace>__<tool>` (it replaces every char outside
+ * `[A-Za-z0-9_-]` with `_`, with no truncation). We use this to sanitize the
+ * names of *imported* servers so our `mcp__<name>` pre-allow patterns line up
+ * with the ids the CLI actually generates. `cliServerName` adds a length cap
+ * and random fallback on top, for names we materialize into the config file.
+ */
+export function cliToolNamespace(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
 }

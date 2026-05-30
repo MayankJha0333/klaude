@@ -23,15 +23,33 @@ import { CatalogEntry } from "./catalog.js";
 const CUSTOM_KEY = "klaude.mcp.customConnectors.v1";
 const CONNECTIONS_KEY = "klaude.mcp.connections.v1";
 
-/** A user-added connector that lives outside the curated catalog. */
+/** Transport kinds Klaude understands — matches Claude Code's own set. */
+export type McpTransport = "streamable-http" | "sse" | "stdio";
+
+/**
+ * A user-added connector that lives outside the curated catalog.
+ *
+ * Two flavors, discriminated by `transport`:
+ *   • remote (streamable-http | sse) → `url` (+ optional pre-registered
+ *     OAuth `clientId`). Authenticated via the OAuth flow in oauth.ts.
+ *   • stdio                          → `command` + `args` + `env`. Spawned
+ *     locally; no auth. Mirrors `claude mcp add <name> -- <command> …`.
+ */
 export interface CustomConnector {
   id: string;
   name: string;
-  url: string;
-  transport: "streamable-http" | "sse";
+  transport: McpTransport;
+  /** Remote (http/sse) endpoint. Present for remote transports, absent for stdio. */
+  url?: string;
   description?: string;
-  /** Pre-registered OAuth client id (skip DCR if set). */
+  /** Pre-registered OAuth client id (remote only; skip DCR if set). */
   clientId?: string;
+  /** stdio: executable to spawn (e.g. "npx"). */
+  command?: string;
+  /** stdio: arguments passed to the command (e.g. ["-y", "@scope/server"]). */
+  args?: string[];
+  // NOTE: stdio `env` is intentionally NOT stored here — env values are often
+  // secrets (API keys), so they live in ctx.secrets via saveStdioEnv/loadStdioEnv.
 }
 
 /** Saved connection metadata — see ConnectionRecord shape below. */
@@ -171,6 +189,46 @@ export async function deleteTokens(
   await ctx.secrets.delete(secretKey(connectorId, "access"));
   await ctx.secrets.delete(secretKey(connectorId, "refresh"));
   await ctx.secrets.delete(secretKey(connectorId, "client"));
+}
+
+// ── stdio env (secret) ──────────────────────────────────────
+//
+// Env vars for a stdio server frequently carry credentials (API keys), so we
+// keep them out of the plaintext globalState connector record and stash them
+// in the OS keychain instead — same treatment as OAuth tokens above. Stored as
+// a single JSON blob keyed by connector id.
+
+function envSecretKey(connectorId: string): string {
+  return `klaude.mcp.${connectorId}.env.v1`;
+}
+
+export async function saveStdioEnv(
+  ctx: vscode.ExtensionContext,
+  connectorId: string,
+  env: Record<string, string>
+): Promise<void> {
+  await ctx.secrets.store(envSecretKey(connectorId), JSON.stringify(env));
+}
+
+export async function loadStdioEnv(
+  ctx: vscode.ExtensionContext,
+  connectorId: string
+): Promise<Record<string, string> | undefined> {
+  const raw = await ctx.secrets.get(envSecretKey(connectorId));
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function deleteStdioEnv(
+  ctx: vscode.ExtensionContext,
+  connectorId: string
+): Promise<void> {
+  await ctx.secrets.delete(envSecretKey(connectorId));
 }
 
 // ── Lookup helpers ──────────────────────────────────────────

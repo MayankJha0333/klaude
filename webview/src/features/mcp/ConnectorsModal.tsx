@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon, IconName } from "../../design/icons";
-import { send, onMessage, ConnectorView } from "../../lib/rpc";
+import { send, onMessage, ConnectorView, CustomConnectorDraft } from "../../lib/rpc";
 
 export interface ConnectorsModalProps {
   open: boolean;
@@ -82,7 +82,9 @@ export function ConnectorsModal({ open, onClose }: ConnectorsModalProps) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return connectors.filter((c) => {
-      if (tab === "connected" && c.status !== "connected") return false;
+      // "Connected" means servers the user connected *in Klaude* — managed
+      // (Claude Code) servers are always-active but live under their own pill.
+      if (tab === "connected" && (c.status !== "connected" || c.managed)) return false;
       if (tab === "custom" && c.builtIn) return false;
       if (!q) return true;
       return (
@@ -94,7 +96,9 @@ export function ConnectorsModal({ open, onClose }: ConnectorsModalProps) {
   }, [connectors, query, tab]);
 
   const counts = useMemo(() => {
-    const connected = connectors.filter((c) => c.status === "connected").length;
+    const connected = connectors.filter(
+      (c) => c.status === "connected" && !c.managed
+    ).length;
     const custom = connectors.filter((c) => !c.builtIn).length;
     return { connected, custom };
   }, [connectors]);
@@ -276,12 +280,17 @@ function ConnectorCard({
 }) {
   const connected = connector.status === "connected";
   const errored = connector.status === "error";
+  const managed = !!connector.managed;
+  const isStdio = connector.transport === "stdio";
   const iconName = (connector.icon as IconName) ?? "cloud";
+  // The card's hover title + the mono subtitle point at the endpoint:
+  // a URL for remote servers, the command line for stdio ones.
+  const target = connector.url ?? connector.command ?? "";
 
   return (
     <article
       className={`market-card${connected ? " installed" : ""}`}
-      title={connector.url}
+      title={target}
     >
       <div className="market-card-head">
         <span className="market-card-icon">
@@ -291,13 +300,22 @@ function ConnectorCard({
           <span className="market-card-name">{connector.name}</span>
           <span className="market-card-pub">
             <span className="market-card-cat">{connector.vendor}</span>
-            {!connector.builtIn && (
+            {managed ? (
               <>
                 <span className="market-card-dot" />
-                <span style={{ color: "var(--accent)" }}>custom</span>
+                <span style={{ color: "var(--accent)" }}>
+                  Claude Code{connector.scope ? ` · ${connector.scope}` : ""}
+                </span>
               </>
-            )}
-            {connected && (
+            ) : !connector.builtIn ? (
+              <>
+                <span className="market-card-dot" />
+                <span style={{ color: "var(--accent)" }}>
+                  {isStdio ? "local" : "custom"}
+                </span>
+              </>
+            ) : null}
+            {connected && !managed && (
               <>
                 <span className="market-card-dot" />
                 <span style={{ color: "var(--ok)" }}>
@@ -309,6 +327,20 @@ function ConnectorCard({
         </div>
       </div>
       <p className="market-card-desc">{connector.description}</p>
+
+      {(isStdio || managed) && target && (
+        <p
+          className="market-card-desc"
+          style={{
+            fontFamily: "var(--mono, ui-monospace, monospace)",
+            fontSize: 11,
+            color: "var(--t3)",
+            wordBreak: "break-all"
+          }}
+        >
+          {target}
+        </p>
+      )}
 
       {errored && connector.lastError && (
         <p
@@ -338,61 +370,88 @@ function ConnectorCard({
             Docs
           </button>
         )}
-        {!connector.builtIn && !connected && (
-          <button
-            type="button"
-            className="market-card-btn danger"
-            onClick={onRemove}
-            disabled={busy}
-          >
-            <Icon name="x" size={11} />
-            Remove
-          </button>
-        )}
-        {connected ? (
-          <button
-            type="button"
+
+        {managed ? (
+          // Read-only — these are configured in Claude Code's own config.
+          // Manage them with the `claude mcp` CLI; Klaude just surfaces them
+          // and pre-allows their tools.
+          <span
             className="market-card-btn ghost"
-            onClick={onDisconnect}
-            disabled={busy}
-            style={{ marginLeft: "auto" }}
+            style={{ marginLeft: "auto", cursor: "default", opacity: 0.85 }}
+            title="Configured in Claude Code — manage with the `claude mcp` CLI"
           >
-            <Icon name="logout" size={11} />
-            Disconnect
-          </button>
-        ) : busy ? (
-          // While the OAuth flow is in-flight, the spinner sits *next to* a
-          // real Cancel button — so a stuck browser tab never leaves the
-          // user wondering whether the UI is frozen. Clicking Cancel aborts
-          // the loopback wait on the host side and closes the listener.
-          <>
-            <span
-              className="market-card-btn ghost"
-              style={{ marginLeft: "auto", cursor: "default" }}
-              aria-live="polite"
-            >
-              <span className="market-search-spinner" />
-              Waiting for browser…
-            </span>
-            <button
-              type="button"
-              className="market-card-btn danger"
-              onClick={onCancelConnect}
-              title="Cancel and close the local OAuth listener"
-            >
-              <Icon name="x" size={11} />
-              Cancel
-            </button>
-          </>
+            <Icon name="check" size={11} />
+            Managed by Claude Code
+          </span>
         ) : (
-          <button
-            type="button"
-            className="market-card-btn primary"
-            onClick={onConnect}
-          >
-            <Icon name="arrow" size={11} />
-            Connect
-          </button>
+          <>
+            {!connector.builtIn && !connected && (
+              <button
+                type="button"
+                className="market-card-btn danger"
+                onClick={onRemove}
+                disabled={busy}
+              >
+                <Icon name="x" size={11} />
+                Remove
+              </button>
+            )}
+            {connected ? (
+              <button
+                type="button"
+                className="market-card-btn ghost"
+                onClick={onDisconnect}
+                disabled={busy}
+                style={{ marginLeft: "auto" }}
+              >
+                <Icon name="logout" size={11} />
+                Disconnect
+              </button>
+            ) : busy ? (
+              isStdio ? (
+                // Local spawn — no browser round-trip, so just a spinner.
+                <span
+                  className="market-card-btn ghost"
+                  style={{ marginLeft: "auto", cursor: "default" }}
+                  aria-live="polite"
+                >
+                  <span className="market-search-spinner" />
+                  Starting…
+                </span>
+              ) : (
+                // While OAuth is in-flight, the spinner sits next to a real
+                // Cancel button so a stuck browser tab never freezes the UI.
+                <>
+                  <span
+                    className="market-card-btn ghost"
+                    style={{ marginLeft: "auto", cursor: "default" }}
+                    aria-live="polite"
+                  >
+                    <span className="market-search-spinner" />
+                    Waiting for browser…
+                  </span>
+                  <button
+                    type="button"
+                    className="market-card-btn danger"
+                    onClick={onCancelConnect}
+                    title="Cancel and close the local OAuth listener"
+                  >
+                    <Icon name="x" size={11} />
+                    Cancel
+                  </button>
+                </>
+              )
+            ) : (
+              <button
+                type="button"
+                className="market-card-btn primary"
+                onClick={onConnect}
+              >
+                <Icon name={isStdio ? "play" : "arrow"} size={11} />
+                {isStdio ? "Start" : "Connect"}
+              </button>
+            )}
+          </>
         )}
       </div>
     </article>
@@ -406,20 +465,43 @@ function AddCustomForm({
   onSubmit
 }: {
   onCancel: () => void;
-  onSubmit: (draft: {
-    name: string;
-    url: string;
-    clientId?: string;
-    clientSecret?: string;
-  }) => void;
+  onSubmit: (draft: CustomConnectorDraft) => void;
 }) {
+  const [kind, setKind] = useState<"remote" | "stdio">("remote");
   const [name, setName] = useState("");
+  // remote
   const [url, setUrl] = useState("");
   const [advanced, setAdvanced] = useState(false);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  // stdio
+  const [command, setCommand] = useState("");
+  const [argsText, setArgsText] = useState("");
+  const [envText, setEnvText] = useState("");
 
-  const canSubmit = name.trim().length > 0 && url.trim().length > 0;
+  const canSubmit =
+    name.trim().length > 0 &&
+    (kind === "remote" ? url.trim().length > 0 : command.trim().length > 0);
+
+  const submit = () => {
+    if (kind === "stdio") {
+      onSubmit({
+        name: name.trim(),
+        kind: "stdio",
+        command: command.trim(),
+        args: parseLines(argsText),
+        env: parseEnv(envText)
+      });
+    } else {
+      onSubmit({
+        name: name.trim(),
+        kind: "remote",
+        url: url.trim(),
+        clientId: clientId.trim() || undefined,
+        clientSecret: clientSecret.trim() || undefined
+      });
+    }
+  };
 
   return (
     <div
@@ -438,8 +520,9 @@ function AddCustomForm({
           <div className="market-head-titles">
             <h2 className="market-title">Add custom connector</h2>
             <p className="market-sub">
-              Paste the URL of a remote MCP server. We'll discover its auth
-              metadata, register a client, and open your browser to authorize.
+              {kind === "remote"
+                ? "Paste the URL of a remote MCP server. We'll discover its auth metadata, register a client, and open your browser to authorize."
+                : "Run a local MCP server as a command (stdio) — the same as `claude mcp add <name> -- <command>`."}
             </p>
           </div>
           <button
@@ -460,11 +543,52 @@ function AddCustomForm({
             gap: 12
           }}
         >
+          {/* Transport toggle — remote (URL) vs local (stdio command). */}
+          <div
+            role="tablist"
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: 3,
+              background: "var(--s2)",
+              borderRadius: 8,
+              border: "1px solid var(--b2)"
+            }}
+          >
+            {(["remote", "stdio"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={kind === k}
+                onClick={() => setKind(k)}
+                style={{
+                  flex: 1,
+                  padding: "7px 10px",
+                  borderRadius: 6,
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: kind === k ? "var(--b2)" : "transparent",
+                  color: kind === k ? "var(--t1)" : "var(--t3)"
+                }}
+              >
+                <Icon
+                  name={k === "remote" ? "cloud" : "terminal"}
+                  size={11}
+                  style={{ marginRight: 5 }}
+                />
+                {k === "remote" ? "Remote URL" : "Local command"}
+              </button>
+            ))}
+          </div>
+
           <Field label="Name">
             <input
               type="text"
               className="market-search-input"
-              placeholder="My MCP server"
+              placeholder={kind === "remote" ? "My MCP server" : "filesystem"}
               value={name}
               onChange={(e) => setName(e.target.value)}
               spellCheck={false}
@@ -472,56 +596,94 @@ function AddCustomForm({
               autoFocus
             />
           </Field>
-          <Field label="Server URL" hint="HTTPS only (except localhost).">
-            <input
-              type="text"
-              placeholder="https://mcp.example.com/mcp"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              spellCheck={false}
-              style={inputStyle}
-            />
-          </Field>
 
-          <button
-            type="button"
-            className="inline-btn"
-            onClick={() => setAdvanced((v) => !v)}
-          >
-            {advanced ? "Hide" : "Show"} advanced options
-            <Icon
-              name={advanced ? "chevronU" : "chevronD"}
-              size={11}
-              style={{ marginLeft: 4 }}
-            />
-          </button>
-
-          {advanced && (
+          {kind === "remote" ? (
             <>
-              <Field
-                label="OAuth client_id"
-                hint="Leave blank to use Dynamic Client Registration."
-              >
+              <Field label="Server URL" hint="HTTPS only (except localhost).">
                 <input
                   type="text"
-                  placeholder="(optional)"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder="https://mcp.example.com/mcp"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
                   spellCheck={false}
                   style={inputStyle}
                 />
               </Field>
-              <Field
-                label="OAuth client_secret"
-                hint="Stored in SecretStorage. Optional."
+
+              <button
+                type="button"
+                className="inline-btn"
+                onClick={() => setAdvanced((v) => !v)}
               >
+                {advanced ? "Hide" : "Show"} advanced options
+                <Icon
+                  name={advanced ? "chevronU" : "chevronD"}
+                  size={11}
+                  style={{ marginLeft: 4 }}
+                />
+              </button>
+
+              {advanced && (
+                <>
+                  <Field
+                    label="OAuth client_id"
+                    hint="Leave blank to use Dynamic Client Registration."
+                  >
+                    <input
+                      type="text"
+                      placeholder="(optional)"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      spellCheck={false}
+                      style={inputStyle}
+                    />
+                  </Field>
+                  <Field
+                    label="OAuth client_secret"
+                    hint="Stored in SecretStorage. Optional."
+                  >
+                    <input
+                      type="password"
+                      placeholder="(optional)"
+                      value={clientSecret}
+                      onChange={(e) => setClientSecret(e.target.value)}
+                      spellCheck={false}
+                      style={inputStyle}
+                    />
+                  </Field>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Field label="Command" hint="The executable to run.">
                 <input
-                  type="password"
-                  placeholder="(optional)"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
+                  type="text"
+                  placeholder="npx"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
                   spellCheck={false}
                   style={inputStyle}
+                />
+              </Field>
+              <Field label="Arguments" hint="One per line.">
+                <textarea
+                  value={argsText}
+                  onChange={(e) => setArgsText(e.target.value)}
+                  placeholder={"-y\n@modelcontextprotocol/server-filesystem\n/path/to/allowed/dir"}
+                  spellCheck={false}
+                  rows={3}
+                  style={{ ...inputStyle, resize: "vertical", fontFamily: "var(--mono, ui-monospace, monospace)" }}
+                />
+              </Field>
+              <Field label="Environment" hint="KEY=VALUE, one per line. Optional.">
+                <textarea
+                  value={envText}
+                  onChange={(e) => setEnvText(e.target.value)}
+                  placeholder={"API_KEY=…"}
+                  spellCheck={false}
+                  rows={2}
+                  style={{ ...inputStyle, resize: "vertical", fontFamily: "var(--mono, ui-monospace, monospace)" }}
                 />
               </Field>
             </>
@@ -546,14 +708,7 @@ function AddCustomForm({
               type="button"
               className="market-card-btn primary"
               disabled={!canSubmit}
-              onClick={() =>
-                onSubmit({
-                  name: name.trim(),
-                  url: url.trim(),
-                  clientId: clientId.trim() || undefined,
-                  clientSecret: clientSecret.trim() || undefined
-                })
-              }
+              onClick={submit}
             >
               <Icon name="plus" size={11} />
               Add connector
@@ -563,6 +718,28 @@ function AddCustomForm({
       </div>
     </div>
   );
+}
+
+/** Split a textarea into trimmed, non-empty lines (one stdio arg per line). */
+function parseLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+/** Parse `KEY=VALUE` lines into an env record (undefined when empty). */
+function parseEnv(text: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    const eq = t.indexOf("=");
+    if (eq <= 0) continue;
+    const key = t.slice(0, eq).trim();
+    if (key) out[key] = t.slice(eq + 1).trim();
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function Field({
