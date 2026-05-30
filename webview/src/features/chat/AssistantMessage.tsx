@@ -54,15 +54,6 @@ export function AssistantMessage({
       )}
       <div className="md flex-1 min-w-0 leading-[1.6] break-words text-[13.5px] pt-1 text-t2">
         {renderMarkdown(text)}
-        {streaming && (
-          <motion.span
-            className="inline-block w-[7px] h-[1em] bg-accent ml-0.5 align-middle rounded-[1px]"
-            style={{ boxShadow: "0 0 6px var(--accent-shadow)" }}
-            animate={{ opacity: [1, 0, 1] }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            aria-hidden
-          />
-        )}
       </div>
       {!streaming && text.length > 0 && (
         <div className="absolute top-0 right-0 flex items-center gap-1 opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100">

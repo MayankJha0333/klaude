@@ -10,6 +10,7 @@ import {
   TimelineEvent,
   EditorContext,
   PermissionMode,
+  EffortLevel,
   ModelInfo,
   SkillInfo,
   ConventionsSource
@@ -26,6 +27,7 @@ import { EditConfirmModal } from "./EditConfirmModal";
 import { HistoryDrawer } from "./HistoryDrawer";
 import { UserMessage } from "./UserMessage";
 import { AssistantMessage } from "./AssistantMessage";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 import { ConventionsBanner } from "./ConventionsBanner";
 import { SkillSuggestion } from "./SkillSuggestion";
 import { ToolGroupCard, ToolGroupItem } from "./ToolGroupCard";
@@ -45,7 +47,12 @@ import type { PlanRevisionView } from "../plan";
 export interface ChatScreenProps {
 
   model: string;
+  /** alias → resolved concrete id for every picker entry, so each row can
+   *  show its real version. */
+  resolvedModels: Record<string, string>;
   permissionMode: PermissionMode;
+  effort: EffortLevel;
+  thinking: boolean;
   events: TimelineEvent[];
   streaming: string;
   busy: boolean;
@@ -83,7 +90,10 @@ export interface ChatScreenProps {
 
 export function ChatScreen({
   model,
+  resolvedModels,
   permissionMode,
+  effort,
+  thinking,
   events,
   streaming,
   busy,
@@ -205,6 +215,11 @@ export function ChatScreen({
   };
 
   const grouped = useMemo(() => groupEvents(events), [events]);
+  // Persistent "working" loader for the whole turn — from submit, through the
+  // pre-output thinking gap, while text streams, and during tool execution —
+  // until the turn ends. Trails at the bottom of the log so it always reads as
+  // "more is coming".
+  const showThinking = busy;
   const planContext = useMemo(
     () => ({ views: grouped.views, ordered: grouped.ordered }),
     [grouped]
@@ -247,7 +262,7 @@ export function ChatScreen({
     if (userScrolled.current) return;
     const el = logRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [grouped, streaming]);
+  }, [grouped, streaming, showThinking]);
 
 
   const onScroll = () => {
@@ -343,7 +358,12 @@ export function ChatScreen({
             handleAddDiffNote
           );
         })}
-        {streaming && <AssistantMessage text={streaming} streaming />}
+        {streaming && (
+          <div className="mx-1.5 pl-9">
+            <AssistantMessage text={streaming} streaming showAvatar={false} />
+          </div>
+        )}
+        {showThinking && <ThinkingIndicator />}
         {error && <ErrorBanner text={error} onDismiss={onDismissError} />}
       </div>
 
@@ -487,9 +507,12 @@ export function ChatScreen({
           }}
           onCancel={onCancel}
           busy={busy}
-  
+
           model={model}
+          resolvedModels={resolvedModels}
           permissionMode={permissionMode}
+          effort={effort}
+          thinking={thinking}
           models={models}
           skills={skills}
           focusKey={composerFocusKey}

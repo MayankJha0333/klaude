@@ -40,7 +40,14 @@ export class HistoryService {
   }
 
   async save(session: StoredSession): Promise<void> {
-    if (!hasUserContent(session)) return; // never persist an empty placeholder
+    if (!hasUserContent(session)) {
+      // Never persist an empty placeholder — and if a previously-saved
+      // session has since lost all its user content (e.g. rewound to empty),
+      // remove the stale file instead of silently skipping, otherwise a
+      // reload would resurrect it via restoreLatestSession.
+      await this.delete(session.id).catch(() => undefined);
+      return;
+    }
     await this.ensureReady();
     const file = path.join(this.dir, `${session.id}.json`);
     const tmp = `${file}.tmp`;

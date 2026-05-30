@@ -35,7 +35,25 @@ export interface ClaudeCliOpts {
    *  tools in auto mode so the agent can call them without per-tool
    *  approval prompts. */
   mcpServerNames?: string[];
+  /** Reasoning effort for the session. Maps directly to the CLI's
+   *  `--effort <level>` flag (low | medium | high | xhigh | max). */
+  effort?: EffortLevel;
+  /** Extended-thinking toggle. When defined, passed through as
+   *  `--settings '{"alwaysThinkingEnabled": <bool>}'` so the session
+   *  setting is authoritative regardless of the user's settings.json. */
+  thinking?: boolean;
 }
+
+/** Effort levels accepted by `claude --effort`. */
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+const EFFORT_LEVELS: ReadonlyArray<EffortLevel> = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max"
+];
 
 export class ClaudeCliProvider implements ChatProvider {
   readonly id = "claude-cli";
@@ -150,6 +168,19 @@ export function buildArgs(
     "--verbose"
   ];
   if (model) args.push("--model", model);
+
+  // Reasoning effort — the CLI validates the level itself, but we guard
+  // against a stale/unknown config value reaching argv.
+  if (opts.effort && EFFORT_LEVELS.includes(opts.effort)) {
+    args.push("--effort", opts.effort);
+  }
+
+  // Extended thinking. `--settings` layers a JSON blob on top of the
+  // resolved settings sources (user/project/local) for this run only, so
+  // setting just `alwaysThinkingEnabled` leaves every other setting intact.
+  if (typeof opts.thinking === "boolean") {
+    args.push("--settings", JSON.stringify({ alwaysThinkingEnabled: opts.thinking }));
+  }
 
   const cliMode = mapPermissionMode(opts.permissionMode ?? "default");
   args.push("--permission-mode", cliMode);
@@ -276,7 +307,12 @@ export interface CliEvent {
   type: string;
   subtype?: string;
   session_id?: string;
+  /** Resolved model id on the `system`/`init` event (alias → concrete id). */
+  model?: string;
   message?: {
+    /** Resolved model id on each `assistant` message — the model that
+     *  actually produced this turn's output. */
+    model?: string;
     content?: Array<
       | { type: "text"; text: string }
       | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
@@ -314,12 +350,23 @@ export function makeProcessor(setResume?: (id: string) => void): Processor {
   let sawPartialText = false;
   const startedToolIds = new Set<string>();
   let currentBlockType: "text" | "tool_use" | "other" | null = null;
+  // The CLI reports the *resolved* model (aliases like `opus` expand to a
+  // concrete id). Emit it once per change so the UI can show what's actually
+  // running rather than the alias the user picked.
+  let reportedModel: string | null = null;
+  const emitModel = (model: string | undefined, out: StreamDelta[]) => {
+    if (model && model !== reportedModel) {
+      reportedModel = model;
+      out.push({ type: "model", model });
+    }
+  };
 
   return (ev) => {
     const out: StreamDelta[] = [];
 
     if (ev.type === "system" && ev.subtype === "init") {
       if (ev.session_id) setResume?.(ev.session_id);
+      emitModel(ev.model, out);
       return out;
     }
 
@@ -367,6 +414,7 @@ export function makeProcessor(setResume?: (id: string) => void): Processor {
     }
 
     if (ev.type === "assistant" && ev.message?.content) {
+      emitModel(ev.message.model, out);
       for (const block of ev.message.content) {
         if (block.type === "text") {
           if (!sawPartialText) out.push({ type: "text", text: block.text });

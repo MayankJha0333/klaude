@@ -2,11 +2,14 @@ import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { spawn, ChildProcess } from "node:child_process";
+import * as readline from "node:readline";
 import { Session } from "../core/session.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import { PermissionMode, StreamDelta, PlanRevisionMeta } from "../core/types.js";
 import { buildSystemPrompt } from "./system-prompt.js";
-import { createProvider, bundledClaudeBinary } from "../providers/factory.js";
+import { createProvider, bundledClaudeBinary, resolveClaudeBinary } from "../providers/factory.js";
+import type { EffortLevel } from "../providers/claude-cli.js";
 import { getToken, setToken, deleteToken, classifyToken } from "../secrets.js";
 import { CheckpointService } from "../services/checkpoint.js";
 import { HistoryService, deriveTitle } from "../services/history.js";
@@ -47,6 +50,17 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   private session!: Session;
   private orchestrator?: Orchestrator;
   private resumeId?: string;
+  /** Short-lived CLI process used to resolve an alias → concrete model id
+   *  without running a turn. Killed at the `init` event (before any API
+   *  call), so it's free. Tracked so we can cancel a stale probe. */
+  private modelProbe?: ChildProcess;
+  /** alias → resolved-id map for every model in the picker. Cached for the
+   *  panel's lifetime; re-posted instantly on webview reload so each row can
+   *  always show its concrete version. */
+  private resolvedModels = new Map<string, string>();
+  /** Guard so overlapping `broadcastModels` calls don't fan out duplicate
+   *  probe processes. */
+  private resolvingModels = false;
   private checkpoints?: CheckpointService;
   private history: HistoryService;
   private decorations: PlanDecorationService;
@@ -82,11 +96,21 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     // (comment, accept, reply, …) reaches the same session no matter which
     // surface fired it.
     this.artifacts.setMessageHandler((msg) => this.onMessage(msg));
+    // Pointing at a different `claude` binary changes which models the
+    // aliases resolve to, so drop the cached versions and re-probe.
+    const cfgWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("klaude.claudeBinaryPath")) {
+        this.resolvedModels.clear();
+        void this.broadcastModels();
+      }
+    });
     ctx.subscriptions.push({
       dispose: () => {
         this.decorations.dispose();
         this.artifacts.closeAll();
         disposeConventionsWatchers();
+        this.modelProbe?.kill("SIGKILL");
+        cfgWatcher.dispose();
       }
     });
     this.initSession();
@@ -182,7 +206,14 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     };
     view.webview.html = this.html(view.webview);
 
-    view.webview.onDidReceiveMessage((msg) => this.onMessage(msg));
+    view.webview.onDidReceiveMessage((msg) => {
+      // onMessage is async; surface rejections instead of letting them become
+      // silent unhandled promise rejections (which previously masked failures
+      // like a throwing checkpoint restore mid-rewind).
+      void this.onMessage(msg).catch((err) =>
+        console.error("[klaude] onMessage failed:", err)
+      );
+    });
     this.post({ type: "hello", sessionId: this.session.id });
     void this.broadcastAuthState();
     // Try to pick up the most recently used chat instead of starting fresh.
@@ -242,7 +273,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       if (list.length === 0) return;
       const latest = list[0]; // already sorted by updatedAt desc
       const stored = await this.history.load(latest.id);
-      if (!stored || stored.timeline.length === 0) return;
+      // Require real user content — never re-adopt an empty / placeholder
+      // session (e.g. one rewound down to empty), which would resurrect a
+      // chat the user just cleared.
+      if (!stored || !stored.timeline.some((e) => e.kind === "user")) return;
 
       this.session = new Session(stored.title);
       Object.defineProperty(this.session, "id", { value: stored.id });
@@ -302,8 +336,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
    */
   async broadcastAuthState() {
     const cfg = vscode.workspace.getConfiguration("klaude");
-    const model = cfg.get<string>("model", "claude-sonnet-4-6");
+    const model = cfg.get<string>("model", "default");
     const permissionMode = cfg.get<PermissionMode>("permissionMode", "default");
+    const effort = cfg.get<EffortLevel>("effort", "high");
+    const thinking = cfg.get<boolean>("thinking", true);
     const token = await getToken(this.ctx);
     const credsReady = this.ctx.globalState.get<boolean>(
       ChatPanelProvider.CLAUDE_CREDS_READY_KEY,
@@ -314,7 +350,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       type: "auth",
       authed,
       model,
-      permissionMode
+      permissionMode,
+      effort,
+      thinking
     });
     if (authed) {
       await this.broadcastModels();
@@ -679,6 +717,22 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
           await vscode.workspace
             .getConfiguration("klaude")
             .update("permissionMode", msg.mode, vscode.ConfigurationTarget.Global);
+          await this.broadcastAuthState();
+        }
+        break;
+      case "setEffort":
+        if (typeof msg.effort === "string") {
+          await vscode.workspace
+            .getConfiguration("klaude")
+            .update("effort", msg.effort, vscode.ConfigurationTarget.Global);
+          await this.broadcastAuthState();
+        }
+        break;
+      case "setThinking":
+        if (typeof msg.thinking === "boolean") {
+          await vscode.workspace
+            .getConfiguration("klaude")
+            .update("thinking", msg.thinking, vscode.ConfigurationTarget.Global);
           await this.broadcastAuthState();
         }
         break;
@@ -1687,6 +1741,123 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private async broadcastModels() {
     this.post({ type: "models", models: availableModels() });
+    void this.resolveModelVersions();
+  }
+
+  /**
+   * Resolve every alias in the picker (default/opus/sonnet/haiku) to the
+   * concrete model id the CLI would use (e.g. `claude-opus-4-7[1m]`), so each
+   * row shows its real version the moment the picker opens — not just after a
+   * turn.
+   *
+   * Each probe spawns the bundled CLI and reads the `system`/`init` event,
+   * which carries the resolved `model` and fires during session setup —
+   * *before* any prompt is sent to the API — then kills the process. No
+   * prompt reaches the model, so this costs no subscription tokens. Results
+   * are cached for the panel's lifetime and re-posted on webview reload.
+   */
+  private async resolveModelVersions(): Promise<void> {
+    const aliases = availableModels().map((m) => m.value);
+
+    // Re-post everything we already know immediately (covers reloads).
+    for (const alias of aliases) {
+      const resolved = this.resolvedModels.get(alias);
+      if (resolved) this.post({ type: "activeModel", model: resolved, alias });
+    }
+
+    if (this.resolvingModels) return;
+    const missing = aliases.filter((a) => !this.resolvedModels.has(a));
+    if (missing.length === 0) return;
+
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) return;
+    // Resolve against the *same* binary turns will use, so the version shown
+    // matches what actually runs (honours klaude.claudeBinaryPath).
+    const binary = resolveClaudeBinary();
+    if (!fs.existsSync(binary)) return;
+    const token = await getToken(this.ctx);
+
+    this.resolvingModels = true;
+    try {
+      // Sequential so we never hold more than one CLI process in memory.
+      for (const alias of missing) {
+        const resolved = await this.probeModel(alias, binary, workspaceRoot, token);
+        if (resolved) {
+          this.resolvedModels.set(alias, resolved);
+          this.post({ type: "activeModel", model: resolved, alias });
+        }
+      }
+    } finally {
+      this.resolvingModels = false;
+    }
+  }
+
+  /**
+   * Spawn the CLI for a single alias, resolve to the concrete model id from
+   * its `init` event, then kill the process. Resolves to null on any
+   * error/timeout so the caller can move on to the next alias.
+   */
+  private probeModel(
+    alias: string,
+    binary: string,
+    cwd: string,
+    token: string | undefined
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      const env = token
+        ? { ...process.env, ANTHROPIC_API_KEY: token }
+        : process.env;
+      // A throwaway prompt the model never sees — we kill at the init event.
+      // `--no-session-persistence` avoids leaving a stray empty session.
+      const child = spawn(
+        binary,
+        [
+          "-p",
+          "--model",
+          alias,
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--no-session-persistence",
+          "."
+        ],
+        { cwd, env, stdio: ["ignore", "pipe", "ignore"] }
+      );
+      this.modelProbe = child;
+
+      let settled = false;
+      const finish = (result: string | null) => {
+        if (settled) return;
+        settled = true;
+        if (this.modelProbe === child) this.modelProbe = undefined;
+        if (!child.killed) child.kill("SIGKILL");
+        resolve(result);
+      };
+
+      const rl = readline.createInterface({ input: child.stdout!, crlfDelay: Infinity });
+      rl.on("line", (line) => {
+        if (settled) return;
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        let ev: { type?: string; subtype?: string; model?: string } | null = null;
+        try {
+          ev = JSON.parse(trimmed);
+        } catch {
+          return;
+        }
+        if (
+          ev?.type === "system" &&
+          ev.subtype === "init" &&
+          typeof ev.model === "string"
+        ) {
+          finish(ev.model);
+        }
+      });
+      child.once("error", () => finish(null));
+      child.once("exit", () => finish(null));
+      // Safety net: never let a wedged probe linger.
+      setTimeout(() => finish(null), 10_000);
+    });
   }
 
   private static readonly DISABLED_SKILLS_KEY = "klaude.disabledSkills.v1";
@@ -1865,16 +2036,14 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private async rewindTo(turnId: string) {
-    if (!this.checkpoints) {
-      this.post({ type: "error", message: "No checkpoint for this message." });
-      return;
-    }
-    if (!this.checkpoints.hasCheckpoint(turnId)) {
-      this.post({ type: "error", message: "No checkpoint for this message." });
-      return;
-    }
     this.orchestrator?.cancel();
-    await this.checkpoints.restore(turnId);
+    // Truncate the conversation and clear the UI FIRST. File restore (below)
+    // can be slow or throw on a large/dirty tree, and its rejection used to
+    // be swallowed by the fire-and-forget message handler — which silently
+    // aborted the rewind before it ever posted, so a first-message rewind
+    // "did nothing". Doing the truncate + post up front means the chat always
+    // clears (a single-message rewind drops straight to the new-chat screen),
+    // regardless of what happens during file restore.
     const surviving = this.session.truncateAt(turnId);
     this.resumeId = undefined;
 
@@ -1908,6 +2077,34 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     }
 
     this.post({ type: "rewind", events: surviving });
+    // Persist the truncation so a reload doesn't bring the rewound messages
+    // back. When nothing survives (e.g. rewinding a single-message chat down
+    // to empty), `history.save` would no-op — it never persists an empty
+    // timeline — leaving the stale file on disk for `restoreLatestSession`
+    // to resurrect on the next reload. So cancel any queued save and delete
+    // the session file outright.
+    if (surviving.length === 0) {
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = undefined;
+      }
+      await this.history.delete(this.session.id);
+    } else {
+      this.scheduleSave();
+    }
+
+    // Revert file changes from the removed turns — best-effort, AFTER the UI
+    // has already cleared. A checkpoint is captured for every turn (even
+    // read-only ones), so this runs on a first-message rewind too; wrapping
+    // it means a slow or failing restore can never make rewind look like it
+    // "did nothing".
+    if (this.checkpoints?.hasCheckpoint(turnId)) {
+      try {
+        await this.checkpoints.restore(turnId);
+      } catch (err) {
+        console.error("[klaude] checkpoint restore failed during rewind:", err);
+      }
+    }
   }
 
   private async editAt(turnId: string, text: string, revertFiles: boolean) {
@@ -1915,7 +2112,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     if (!trimmed) return;
     this.orchestrator?.cancel();
     if (revertFiles && this.checkpoints?.hasCheckpoint(turnId)) {
-      await this.checkpoints.restore(turnId);
+      try {
+        await this.checkpoints.restore(turnId);
+      } catch (err) {
+        console.error("[klaude] checkpoint restore failed during edit:", err);
+      }
     }
     const surviving = this.session.truncateAt(turnId);
     this.resumeId = undefined;
@@ -1930,9 +2131,11 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       text = await extractInlineImages(text, workspaceForImages);
     }
     const cfg = vscode.workspace.getConfiguration("klaude");
-    const model = cfg.get<string>("model", "claude-sonnet-4-6");
+    const model = cfg.get<string>("model", "default");
     const maxTokens = cfg.get<number>("maxTokens", 4096);
     const permMode = cfg.get<PermissionMode>("permissionMode", "default");
+    const effort = cfg.get<EffortLevel>("effort", "high");
+    const thinking = cfg.get<boolean>("thinking", true);
     const bashAllowlist = cfg.get<string[]>("allowedBashPatterns", []);
     // Skills the user toggled off in the picker. Passed through to the CLI
     // so it actually skips them at invocation time, not just visually.
@@ -2000,7 +2203,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         },
         token,
         mcpConfigPath: mcpConfig?.path,
-        mcpServerNames: mcpConfig?.serverNames
+        mcpServerNames: mcpConfig?.serverNames,
+        effort,
+        thinking
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2036,6 +2241,13 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       onDelta: (d: StreamDelta) => {
         // Forward stream deltas to the webview verbatim (text, tool_use_*, etc.).
         this.post({ type: "delta", delta: d });
+        // The CLI reports the resolved model (alias → concrete id). Re-publish
+        // it as a typed event so the model picker can show what's actually
+        // running, not just the alias the user selected.
+        if (d.type === "model" && d.model) {
+          this.resolvedModels.set(model, d.model);
+          this.post({ type: "activeModel", model: d.model, alias: model });
+        }
         // Usage deltas are the authoritative token counts reported by the
         // CLI. Re-publish them as a typed `tokenUsage` event so the
         // TokenMeter doesn't need to parse the raw delta envelope.
@@ -2143,36 +2355,24 @@ export interface ModelInfo {
 }
 
 /**
- * Models surfaced in the picker, sourced from Claude Code's model-config docs.
+ * Models surfaced in the picker.
  *
- * Two groups:
- *  - **alias**   — Claude Code CLI shorthands (`opus`, `sonnet`, `haiku`,
- *                  `opusplan`, `default`). Subscription mode only.
- *  - **version** — pinned IDs the Messages API accepts directly. Includes
- *                  `[1m]` variants for the two models with 1M context.
- *
- * Aliases are a CLI convention (rejected by the raw Messages API), so they're
- * gated to subscription mode. The `[1m]` suffix is also a CLI convention —
- * the Messages API uses the `context-1m-2025-08-07` beta header instead — so
- * those variants only show in subscription mode.
+ * Klaude runs exclusively on the Claude Code subscription via the bundled
+ * `claude` CLI, so we surface the CLI's *aliases* rather than pinned version
+ * IDs. Per `claude --help`, `--model` takes "an alias for the latest model
+ * (e.g. 'sonnet' or 'opus')" — each alias always resolves to the newest
+ * release for that tier on the user's plan. That means no hardcoded version
+ * numbers to go stale: the picker tracks whatever Claude Code ships as latest.
  *
  * Reference: https://code.claude.com/docs/en/model-config
  */
 function availableModels(): ModelInfo[] {
-  // Subscription (Claude Code CLI). Aliases first (the recommended path),
-  // then explicit versions including the two 1M-context variants.
+  // Claude Code CLI aliases — each tracks the latest model for its tier.
   return [
-    { value: "default",  label: "Default",     note: "your plan's recommended model",                supportsTools: true, group: "alias" },
-    { value: "opus",     label: "Opus",        note: "latest Opus · complex reasoning",              supportsTools: true, group: "alias" },
-    { value: "sonnet",   label: "Sonnet",      note: "latest Sonnet · daily coding",                 supportsTools: true, group: "alias" },
-    { value: "haiku",    label: "Haiku",       note: "latest Haiku · simple tasks",                  supportsTools: true, group: "alias" },
-    { value: "opusplan", label: "Opus + Plan", note: "Opus while planning, Sonnet while executing",  supportsTools: true, group: "alias" },
-
-    { value: "claude-opus-4-7",        label: "Opus 4.7",        note: "current Opus",      supportsTools: true, group: "version" },
-    { value: "claude-opus-4-7[1m]",    label: "Opus 4.7 · 1M",   note: "Opus 4.7 + 1M context window",   supportsTools: true, group: "version" },
-    { value: "claude-sonnet-4-6",      label: "Sonnet 4.6",      note: "current Sonnet",    supportsTools: true, group: "version" },
-    { value: "claude-sonnet-4-6[1m]",  label: "Sonnet 4.6 · 1M", note: "Sonnet 4.6 + 1M context window", supportsTools: true, group: "version" },
-    { value: "claude-haiku-4-5",       label: "Haiku 4.5",       note: "current Haiku",     supportsTools: true, group: "version" }
+    { value: "default", label: "Default", note: "Most capable for complex work", supportsTools: true, group: "alias" },
+    { value: "opus",    label: "Opus",    note: "Deepest reasoning, hardest problems", supportsTools: true, group: "alias" },
+    { value: "sonnet",  label: "Sonnet",  note: "Best for everyday tasks", supportsTools: true, group: "alias" },
+    { value: "haiku",   label: "Haiku",   note: "Fastest for quick answers", supportsTools: true, group: "alias" }
   ];
 }
 

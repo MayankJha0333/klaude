@@ -122,8 +122,30 @@
       "properties": {
         "klaude.model": {
           "type": "string",
-          "default": "claude-sonnet-4-5",
-          "description": "Model ID passed to 'claude -p --model'. Use a CLI alias (sonnet, opus, haiku, opusplan, default) or an explicit version (claude-sonnet-4-6, etc.)."
+          "default": "default",
+          "description": "Model passed to 'claude -p --model'. Defaults to a CLI alias (sonnet, opus, haiku, opusplan, default) that always tracks the latest model for that tier; an explicit version (e.g. claude-sonnet-4-6) also works."
+        },
+        "klaude.effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "high",
+          "description": "Reasoning effort passed to 'claude --effort'. Higher levels let the model reason longer (and spend more tokens) before answering. Set from the model picker in the chat composer."
+        },
+        "klaude.thinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable extended thinking (sets 'alwaysThinkingEnabled' for the session). When on, the model reasons step-by-step before answering — higher quality on complex work, at a higher token cost. Toggle from the model picker in the chat composer."
+        },
+        "klaude.claudeBinaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to a 'claude' CLI binary to use instead of the one bundled with Klaude. Leave empty to use the bundled CLI. Model aliases (opus, sonnet, default) resolve to whatever models the chosen binary knows, so pointing this at a self-updating native install (run 'which claude' to find it) makes new models appear automatically as that CLI updates — without waiting for a Klaude release. Falls back to the bundled CLI if the path doesn't exist."
         },
         "klaude.permissionMode": {
           "type": "string",
@@ -165,7 +187,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.1.119"
+    "@anthropic-ai/claude-code": "^2.1.158"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

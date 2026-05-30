@@ -4,14 +4,37 @@
 // RPC, which knows the connected provider's capabilities.
 // ─────────────────────────────────────────────────────────────
 
-import type { PermissionMode, ModelInfo } from "../../lib/rpc";
+import type { PermissionMode, ModelInfo, EffortLevel } from "../../lib/rpc";
 import type { IconName } from "../../design/icons";
 
 export const FALLBACK_MODELS: ReadonlyArray<ModelInfo> = [
-  { value: "claude-opus-4-7",   label: "Opus 4.7",   note: "best reasoning",      supportsTools: true, group: "version" },
-  { value: "claude-sonnet-4-6", label: "Sonnet 4.6", note: "balanced",            supportsTools: true, group: "version" },
-  { value: "claude-haiku-4-5",  label: "Haiku 4.5",  note: "fastest · low cost",  supportsTools: true, group: "version" }
+  { value: "default", label: "Default", note: "Most capable for complex work", supportsTools: true, group: "alias" },
+  { value: "opus",    label: "Opus",    note: "Deepest reasoning, hardest problems", supportsTools: true, group: "alias" },
+  { value: "sonnet",  label: "Sonnet",  note: "Best for everyday tasks", supportsTools: true, group: "alias" },
+  { value: "haiku",   label: "Haiku",   note: "Fastest for quick answers", supportsTools: true, group: "alias" }
 ];
+
+export interface EffortOption {
+  value: EffortLevel;
+  /** Full label shown next to the "Effort" heading. */
+  label: string;
+  /** Compact label for the segment cell. */
+  short: string;
+}
+
+// Order matters — the segmented control treats this as a low→high ramp and
+// fills every cell up to and including the active level.
+export const EFFORT_LEVELS: ReadonlyArray<EffortOption> = [
+  { value: "low",    label: "Low",        short: "Low" },
+  { value: "medium", label: "Medium",     short: "Med" },
+  { value: "high",   label: "High",       short: "High" },
+  { value: "xhigh",  label: "Extra high", short: "X-high" },
+  { value: "max",    label: "Max",        short: "Max" }
+];
+
+export function findEffort(value: EffortLevel | string | undefined): EffortOption {
+  return EFFORT_LEVELS.find((e) => e.value === value) ?? EFFORT_LEVELS[2];
+}
 
 export interface ModeOption {
   value: PermissionMode;

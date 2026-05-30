@@ -12,6 +12,7 @@ import {
   saveState,
   loadState,
   PermissionMode,
+  EffortLevel,
   TimelineEvent,
   EditorContext,
   ModelInfo,
@@ -36,7 +37,13 @@ import { FALLBACK_MODELS } from "./features/chat/constants";
 type AuthState =
   | { status: "loading" }
   | { status: "signedOut" }
-  | { status: "authed"; model: string; permissionMode: PermissionMode };
+  | {
+      status: "authed";
+      model: string;
+      permissionMode: PermissionMode;
+      effort: EffortLevel;
+      thinking: boolean;
+    };
 
 interface Persisted {
   events?: TimelineEvent[];
@@ -82,6 +89,12 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [editorContext, setEditorContext] = useState<EditorContext | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([...FALLBACK_MODELS]);
+  // alias → resolved concrete id (e.g. `default` → `claude-opus-4-7[1m]`),
+  // accumulated as the host resolves each picker entry. Lets every row show
+  // its real version the moment the picker opens.
+  const [resolvedModels, setResolvedModels] = useState<Record<string, string>>(
+    {}
+  );
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [composerFocusKey, setComposerFocusKey] = useState(0);
   const [pendingInsert, setPendingInsert] = useState<CodeInsert | null>(null);
@@ -118,7 +131,9 @@ export function App() {
           setAuth({
             status: "authed",
             model: m.model ?? "default",
-            permissionMode: m.permissionMode ?? "default"
+            permissionMode: m.permissionMode ?? "default",
+            effort: m.effort ?? "high",
+            thinking: m.thinking ?? true
           });
           send({ type: "requestModels" });
           send({ type: "requestSkills" });
@@ -167,12 +182,24 @@ export function App() {
           setEditorContext(m.context ?? null);
           break;
         case "rewind":
+          // Rewinding cancels any in-flight turn server-side, so clear the
+          // client's transient state too: drop the streaming buffer, any
+          // error, and the busy/loader flag. When the rewind empties the
+          // timeline this lands on the same clean slate as a new chat.
           dispatchTimeline({ type: "replace", events: m.events });
           setStreaming("");
           setError(null);
+          setBusy(false);
           break;
         case "models":
           if (m.models.length) setModels(m.models);
+          break;
+        case "activeModel":
+          setResolvedModels((prev) =>
+            prev[m.alias] === m.model
+              ? prev
+              : { ...prev, [m.alias]: m.model }
+          );
           break;
         case "skills":
           setSkills(m.skills);
@@ -248,7 +275,10 @@ export function App() {
     <div className="flex flex-col h-screen relative bg-s0">
       <ChatScreen
         model={auth.model}
+        resolvedModels={resolvedModels}
         permissionMode={auth.permissionMode}
+        effort={auth.effort}
+        thinking={auth.thinking}
         events={events}
         streaming={streaming}
         busy={busy}

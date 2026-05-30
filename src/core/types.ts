@@ -78,6 +78,7 @@ export interface StreamDelta {
     | "tool_use_end"
     | "tool_result"
     | "usage"
+    | "model"
     | "done"
     | "error";
   text?: string;
@@ -88,6 +89,9 @@ export interface StreamDelta {
   resultContent?: string;
   resultIsError?: boolean;
   usage?: TokenUsage;
+  /** Resolved model id the CLI reports for the turn (e.g. an alias like
+   *  `opus` resolving to `claude-opus-4-8`). Carried on `type: "model"`. */
+  model?: string;
 }
 
 export interface TimelineEvent {

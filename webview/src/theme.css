@@ -2680,6 +2680,12 @@ h6.md-h {
   color: var(--t3);
   margin-top: 2px;
 }
+.model-sub-strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: -0.1px;
+}
 .model-scroll {
   flex: 1;
   min-height: 0;
@@ -2719,66 +2725,250 @@ h6.md-h {
 .model-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 11px;
   background: transparent;
-  border: none;
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--t1);
   font-family: inherit;
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
   min-width: 0;
-  transition: background 140ms ease;
+  transition: background 140ms ease, border-color 140ms ease;
 }
 .model-row:hover { background: var(--s3); }
-.model-row.selected { background: var(--accent-soft); }
-.model-row-radio {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1.5px solid var(--b3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: border-color 200ms ease;
-}
-.model-row.selected .model-row-radio { border-color: var(--accent); }
-.model-row-radio-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: transparent;
-  transition: background 200ms ease;
-}
-.model-row.selected .model-row-radio-dot {
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-shadow);
+.model-row.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent-mid);
 }
 .model-row-body {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 2px;
+  flex: 1;
+  gap: 3px;
+}
+.model-row-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
 }
 .model-row-label {
-  font-weight: 600;
+  font-weight: 650;
+  font-size: 13px;
   color: var(--t1);
+  letter-spacing: -0.1px;
 }
 .model-row.selected .model-row-label { color: var(--accent); }
+.model-row-tag {
+  flex-shrink: 0;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-mid);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.4;
+}
+.model-row-version {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-glow, var(--accent));
+  letter-spacing: -0.1px;
+}
+.model-row-version-pending {
+  font-weight: 500;
+  color: var(--t4);
+  font-style: italic;
+}
 .model-row-note {
   font-size: 11px;
   color: var(--t3);
 }
-.model-row-id {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--t4);
+.model-row-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* ── Effort + Thinking controls (bottom of the model picker) ───── */
+
+.model-controls {
+  flex-shrink: 0;
+  border-top: 1px solid var(--b1);
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.model-control {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.model-control-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.model-control-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.model-control-head-inline {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+}
+.model-control-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--t1);
   letter-spacing: -0.1px;
-  word-break: break-all;
+}
+.model-control-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.model-control-note {
+  font-size: 10.5px;
+  color: var(--t3);
+}
+
+/* Segmented effort ramp — cells fill up to the active level. */
+.effort-seg {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+}
+.effort-cell {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 4px;
+  border-radius: 5px;
+  border: 1px solid var(--b2);
+  background: var(--s1);
+  color: var(--t4);
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+.effort-cell:hover {
+  border-color: var(--b3);
+  color: var(--t2);
+}
+.effort-cell.filled {
+  background: var(--accent-soft);
+  border-color: var(--accent-mid);
+  color: var(--accent);
+}
+.effort-cell.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 1px 8px var(--accent-shadow);
+}
+.effort-cell-label {
+  pointer-events: none;
+}
+
+/* Pill toggle switch (Thinking). */
+.kl-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 19px;
+  border-radius: 999px;
+  border: 1px solid var(--b2);
+  background: var(--s1);
+  cursor: pointer;
+  padding: 0;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.kl-switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.kl-switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--t2);
+  transform: translateY(-50%);
+  transition: transform 150ms ease, background 150ms ease;
+}
+.kl-switch.on .kl-switch-knob {
+  background: var(--on-accent);
+  transform: translate(15px, -50%);
+}
+
+/* ── Processing / thinking indicator ──────────────────────────── */
+
+.thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--t3) 0%,
+    var(--t1) 50%,
+    var(--t3) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 1.8s linear infinite;
+}
+@keyframes thinking-shimmer {
+  0% { background-position: 150% 0; }
+  100% { background-position: -150% 0; }
+}
+.thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.thinking-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: thinking-bounce 1.2s infinite ease-in-out both;
+}
+.thinking-dots span:nth-child(1) { animation-delay: -0.24s; }
+.thinking-dots span:nth-child(2) { animation-delay: -0.12s; }
+@keyframes thinking-bounce {
+  0%, 80%, 100% { transform: scale(0.5); opacity: 0.35; }
+  40% { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-shimmer { animation: none; }
+  .thinking-dots span { animation: none; opacity: 0.7; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

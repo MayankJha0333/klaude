@@ -55,6 +55,25 @@ describe("claude-cli mapEvent (single event)", () => {
     const out = mapEvent({ type: "user", message: { content: [{ type: "text", text: "x" }] as any } });
     expect(out).toEqual([]);
   });
+
+  it("emits the resolved model from system/init", () => {
+    const out = mapEvent({
+      type: "system",
+      subtype: "init",
+      session_id: "s1",
+      model: "claude-opus-4-8"
+    });
+    expect(out).toEqual([{ type: "model", model: "claude-opus-4-8" }]);
+  });
+
+  it("emits the resolved model from an assistant message", () => {
+    const out = mapEvent({
+      type: "assistant",
+      message: { model: "claude-sonnet-4-6", content: [{ type: "text", text: "hi" }] }
+    });
+    expect(out).toContainEqual({ type: "model", model: "claude-sonnet-4-6" });
+    expect(out).toContainEqual({ type: "text", text: "hi" });
+  });
 });
 
 describe("claude-cli buildArgs", () => {
@@ -106,6 +125,48 @@ describe("claude-cli buildArgs", () => {
     const idx = args.indexOf("--resume");
     expect(idx).toBeGreaterThan(-1);
     expect(args[idx + 1]).toBe("abc-123");
+  });
+
+  it("passes a valid effort level through --effort", () => {
+    const args = buildArgs("hi", "", {
+      binary: "claude",
+      cwd: "/tmp",
+      effort: "xhigh"
+    });
+    const idx = args.indexOf("--effort");
+    expect(idx).toBeGreaterThan(-1);
+    expect(args[idx + 1]).toBe("xhigh");
+  });
+
+  it("omits --effort entirely when no effort is set", () => {
+    const args = buildArgs("hi", "", { binary: "claude", cwd: "/tmp" });
+    expect(args).not.toContain("--effort");
+  });
+
+  it("drops an unknown effort value rather than forwarding it", () => {
+    const args = buildArgs("hi", "", {
+      binary: "claude",
+      cwd: "/tmp",
+      effort: "ultra" as never
+    });
+    expect(args).not.toContain("--effort");
+    expect(args).not.toContain("ultra");
+  });
+
+  it("maps the thinking toggle to --settings alwaysThinkingEnabled", () => {
+    const on = buildArgs("hi", "", { binary: "claude", cwd: "/tmp", thinking: true });
+    const onIdx = on.indexOf("--settings");
+    expect(onIdx).toBeGreaterThan(-1);
+    expect(JSON.parse(on[onIdx + 1])).toEqual({ alwaysThinkingEnabled: true });
+
+    const off = buildArgs("hi", "", { binary: "claude", cwd: "/tmp", thinking: false });
+    const offIdx = off.indexOf("--settings");
+    expect(JSON.parse(off[offIdx + 1])).toEqual({ alwaysThinkingEnabled: false });
+  });
+
+  it("omits --settings when thinking is left undefined", () => {
+    const args = buildArgs("hi", "", { binary: "claude", cwd: "/tmp" });
+    expect(args).not.toContain("--settings");
   });
 });
 
@@ -196,6 +257,29 @@ describe("claude-cli stateful processor (stream_event partials)", () => {
       message: { content: [{ type: "text", text: "Hello" }] }
     });
     expect(out).toEqual([]);
+  });
+
+  it("emits the resolved model once per change, not on every event", () => {
+    const p = makeProcessor();
+    const first = p({
+      type: "system",
+      subtype: "init",
+      session_id: "s1",
+      model: "claude-opus-4-8"
+    });
+    expect(first).toEqual([{ type: "model", model: "claude-opus-4-8" }]);
+    // Same model on the assistant message → no duplicate model delta.
+    const second = p({
+      type: "assistant",
+      message: { model: "claude-opus-4-8", content: [{ type: "text", text: "ok" }] }
+    });
+    expect(second).toEqual([{ type: "text", text: "ok" }]);
+    // A genuine change re-emits.
+    const third = p({
+      type: "assistant",
+      message: { model: "claude-haiku-4-5", content: [{ type: "text", text: "hi" }] }
+    });
+    expect(third).toContainEqual({ type: "model", model: "claude-haiku-4-5" });
   });
 
   it("emits tool_use_start on content_block_start(tool_use)", () => {

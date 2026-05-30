@@ -81,9 +81,14 @@ export class CheckpointService {
     for (const f of cp.files) {
       const abs = path.join(this.workspaceRoot, f.relPath);
       if (f.existed && f.content) {
-        await fs.mkdir(path.dirname(abs), { recursive: true });
-        await fs.writeFile(abs, f.content);
-        restored++;
+        try {
+          await fs.mkdir(path.dirname(abs), { recursive: true });
+          await fs.writeFile(abs, f.content);
+          restored++;
+        } catch {
+          // Skip a file we can't restore (EACCES/EISDIR/ENOENT race, etc.)
+          // and keep going — one bad path must not abort the whole restore.
+        }
       } else {
         try {
           await fs.unlink(abs);

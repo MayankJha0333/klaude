@@ -16,6 +16,9 @@ const vscode = acquireVsCodeApi();
 
 export type PermissionMode = "default" | "auto" | "plan";
 
+/** Reasoning effort levels — mirror the CLI's `--effort` choices. */
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface TimelineEvent {
   id: string;
   ts: number;
@@ -140,6 +143,7 @@ export type Delta =
   | { type: "tool_use_start"; tool: { id: string; name: string } }
   | { type: "tool_use_input"; text?: string }
   | { type: "tool_use_end" }
+  | { type: "model"; model: string }
   | { type: "done" }
   | { type: "error"; error: string };
 
@@ -258,6 +262,8 @@ export type Outbound =
   | { type: "newSession" }
   | { type: "setModel"; model: string }
   | { type: "setPermissionMode"; mode: PermissionMode }
+  | { type: "setEffort"; effort: EffortLevel }
+  | { type: "setThinking"; thinking: boolean }
   | { type: "rewindTo"; turnId: string }
   | { type: "editAt"; turnId: string; text: string; revertFiles: boolean }
   | { type: "openExternal"; url: string }
@@ -346,7 +352,14 @@ export type Outbound =
 // ── Inbound (extension → webview) ─────────────────────────────
 
 export type Inbound =
-  | { type: "auth"; authed: boolean; model?: string; permissionMode?: PermissionMode }
+  | {
+      type: "auth";
+      authed: boolean;
+      model?: string;
+      permissionMode?: PermissionMode;
+      effort?: EffortLevel;
+      thinking?: boolean;
+    }
   | { type: "hello" }
   | { type: "reset" }
   | { type: "timeline"; event: TimelineEvent }
@@ -357,6 +370,10 @@ export type Inbound =
   | { type: "editorContext"; context: EditorContext | null }
   | { type: "rewind"; events: TimelineEvent[] }
   | { type: "models"; models: ModelInfo[] }
+  /** Resolved model the CLI reported for the last turn, plus the alias/value
+   *  that was selected when it ran (so the UI only shows it while that
+   *  selection is still active). */
+  | { type: "activeModel"; model: string; alias: string }
   | { type: "skills"; skills: SkillInfo[] }
   | { type: "tokenResult"; ok: boolean; error?: string }
   | {

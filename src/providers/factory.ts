@@ -10,8 +10,10 @@
 // ─────────────────────────────────────────────────────────────
 
 import * as path from "node:path";
+import * as fs from "node:fs";
+import * as vscode from "vscode";
 import { ChatProvider } from "./base.js";
-import { ClaudeCliProvider } from "./claude-cli.js";
+import { ClaudeCliProvider, EffortLevel } from "./claude-cli.js";
 import { PermissionMode, TaskType } from "../core/types.js";
 import { ConventionsFile } from "../services/conventions.js";
 
@@ -36,6 +38,10 @@ export interface ProviderContext {
   mcpConfigPath?: string;
   /** Names of the MCP servers in mcpConfigPath — used for auto-mode allowlist. */
   mcpServerNames?: string[];
+  /** Reasoning effort for the session (`--effort`). */
+  effort?: EffortLevel;
+  /** Extended-thinking toggle (`alwaysThinkingEnabled` via `--settings`). */
+  thinking?: boolean;
 }
 
 // The Claude CLI ships inside the extension via the
@@ -58,9 +64,30 @@ export function bundledClaudeBinary(): string {
   );
 }
 
+/**
+ * The `claude` binary Klaude should run. Defaults to the bundled CLI, but if
+ * `klaude.claudeBinaryPath` points at an existing file we use that instead.
+ *
+ * This is the "dynamic models" escape hatch: model aliases (`opus`,
+ * `default`, …) resolve to whatever the *binary* knows, so the set of
+ * available models tracks the binary's version. Pointing this at a
+ * self-updating native `claude` install (`which claude`) means new models
+ * (e.g. a future Opus bump) show up automatically as that CLI updates —
+ * no need to wait for a new Klaude release. The bundled CLI remains the
+ * default and the fallback when the configured path is missing.
+ */
+export function resolveClaudeBinary(): string {
+  const override = vscode.workspace
+    .getConfiguration("klaude")
+    .get<string>("claudeBinaryPath", "")
+    .trim();
+  if (override && fs.existsSync(override)) return override;
+  return bundledClaudeBinary();
+}
+
 export function createProvider(ctx: ProviderContext): ChatProvider {
   return new ClaudeCliProvider({
-    binary: bundledClaudeBinary(),
+    binary: resolveClaudeBinary(),
     cwd: ctx.cwd,
     permissionMode: ctx.permissionMode,
     allowedBashPatterns: ctx.allowedBashPatterns,
@@ -71,6 +98,8 @@ export function createProvider(ctx: ProviderContext): ChatProvider {
     setResumeSessionId: ctx.setResumeSessionId,
     token: ctx.token,
     mcpConfigPath: ctx.mcpConfigPath,
-    mcpServerNames: ctx.mcpServerNames
+    mcpServerNames: ctx.mcpServerNames,
+    effort: ctx.effort,
+    thinking: ctx.thinking
   });
 }

@@ -19,6 +19,7 @@ import {
   send,
   newId,
   PermissionMode,
+  EffortLevel,
   ModelInfo,
   SkillInfo,
   FileSearchResult
@@ -35,7 +36,15 @@ export interface ComposerProps {
   onCancel: () => void;
   busy: boolean;
   model: string;
+  /** alias → resolved concrete id for every picker entry (shown per-row so
+   *  the user sees what each alias actually maps to). */
+  resolvedModels?: Record<string, string>;
   permissionMode: PermissionMode;
+  /** Reasoning effort + extended-thinking toggle, surfaced in the model
+   *  picker. Optional so the inline edit composer (toolbar hidden) can omit
+   *  them; they fall back to the same defaults as klaude config. */
+  effort?: EffortLevel;
+  thinking?: boolean;
   models: ReadonlyArray<ModelInfo>;
   skills: ReadonlyArray<SkillInfo>;
   /** External signal (from Cmd+U etc.) to focus the editor. */
@@ -71,7 +80,10 @@ export function Composer({
   onCancel,
   busy,
   model,
+  resolvedModels = {},
   permissionMode,
+  effort = "high",
+  thinking = true,
   models,
   skills,
   focusKey,
@@ -485,7 +497,12 @@ export function Composer({
           <ModelPicker
             models={models}
             value={model}
+            resolvedModels={resolvedModels}
             onSelect={(v) => send({ type: "setModel", model: v })}
+            effort={effort}
+            onEffort={(level) => send({ type: "setEffort", effort: level })}
+            thinking={thinking}
+            onThinking={(on) => send({ type: "setThinking", thinking: on })}
           />
 
           {busy ? (
